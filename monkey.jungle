@@ -1,0 +1,2 @@
+# Connect IQ build file for the EnvSensor data field.
+project.manifest = manifest.xml

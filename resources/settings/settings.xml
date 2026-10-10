@@ -1,0 +1,39 @@
+<!--
+    Settings panel shown in Garmin Connect / Garmin Express.
+    Every setting is bound to a property from properties.xml and is pushed to
+    the device at runtime; EnvSensorApp.onSettingsChanged() applies the new
+    values without recompiling or restarting the data field.
+-->
+<settings>
+    <!-- Device 1 -->
+    <setting propertyKey="@Properties.Device1BleId" title="@Strings.Device1BleIdTitle" prompt="@Strings.BleIdPrompt">
+        <settingConfig type="alphaNumeric"/>
+    </setting>
+    <setting propertyKey="@Properties.Device1DisplayName" title="@Strings.Device1DisplayNameTitle" prompt="@Strings.DisplayNamePrompt">
+        <settingConfig type="alphaNumeric"/>
+    </setting>
+
+    <!-- Device 2 -->
+    <setting propertyKey="@Properties.Device2BleId" title="@Strings.Device2BleIdTitle" prompt="@Strings.BleIdPrompt">
+        <settingConfig type="alphaNumeric"/>
+    </setting>
+    <setting propertyKey="@Properties.Device2DisplayName" title="@Strings.Device2DisplayNameTitle" prompt="@Strings.DisplayNamePrompt">
+        <settingConfig type="alphaNumeric"/>
+    </setting>
+
+    <!-- Device 3 -->
+    <setting propertyKey="@Properties.Device3BleId" title="@Strings.Device3BleIdTitle" prompt="@Strings.BleIdPrompt">
+        <settingConfig type="alphaNumeric"/>
+    </setting>
+    <setting propertyKey="@Properties.Device3DisplayName" title="@Strings.Device3DisplayNameTitle" prompt="@Strings.DisplayNamePrompt">
+        <settingConfig type="alphaNumeric"/>
+    </setting>
+
+    <!-- Alternative sensor brands -->
+    <setting propertyKey="@Properties.CustomServiceUuid" title="@Strings.CustomServiceUuidTitle" prompt="@Strings.UuidPrompt">
+        <settingConfig type="alphaNumeric"/>
+    </setting>
+    <setting propertyKey="@Properties.CustomCharUuid" title="@Strings.CustomCharUuidTitle" prompt="@Strings.UuidPrompt">
+        <settingConfig type="alphaNumeric"/>
+    </setting>
+</settings>
