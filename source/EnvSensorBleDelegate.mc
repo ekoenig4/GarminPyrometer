@@ -104,6 +104,8 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
     private const SEEN_EXPIRY_MS       = 30000;   // drop nearby-device entries after this
     private const SEEN_MAX             = 20;      // cap on remembered nearby devices
     private const PUBLISH_INTERVAL_MS  = 10000;   // nearby list -> Storage
+    private const PROFILE_RETRY_MS     = 10000;   // no onProfileRegister() -> retry
+    private const PROFILE_MAX_ATTEMPTS = 3;
 
     // Application.Storage key of the nearby-device list (read by settings).
     public static const NEARBY_KEY = "nearby";
@@ -156,6 +158,11 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
 
     // True once registerProfile() has been attempted for the active UUIDs.
     private var mProfileRequested as Boolean = false;
+    private var mProfileRequestMs as Number = 0;   // time of the last attempt
+    private var mProfileAttempts as Number = 0;    // attempts for these UUIDs
+
+    // Why the last scan request failed (shown on the data field), or null.
+    private var mScanError as String? = null;
 
     // True after shutdown(): no further scans are started.
     private var mEnded as Boolean = false;
@@ -212,6 +219,8 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
             mCharUuid = chr;
             mProfileRequested = false;
             mProfileReady = false;
+            mProfileFailed = false;
+            mProfileAttempts = 0;
             registerProfile();
         }
 
@@ -248,6 +257,18 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
         // ---- Profile not registered yet (e.g. UUIDs unset at start) ----
         if (!mEnded && !mProfileRequested) {
             registerProfile();
+        }
+
+        // ---- onProfileRegister() never arrived: retry, then give up ----
+        if (!mEnded && mProfileRequested && !mProfileReady && !mProfileFailed
+                && (now - mProfileRequestMs) > PROFILE_RETRY_MS) {
+            if (mProfileAttempts < PROFILE_MAX_ATTEMPTS) {
+                System.println("EnvSensor: no profile confirmation, retrying");
+                registerProfile();
+            } else {
+                System.println("EnvSensor: profile never confirmed, giving up");
+                mProfileFailed = true;
+            }
         }
 
         // ---- Share the nearby-device list with the settings menu ----
@@ -304,22 +325,26 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
     }
 
     //! Short scan diagnostic for the data field, shown after "SCAN":
-    //!   "NO PROFILE"  GATT profile registration failed
+    //!   " NO PROFILE" GATT profile registration failed (no pairing possible)
     //!   "PAIR"        a matching device was found and is being paired
-    //!   "OFF"         scanning is not running
+    //!   "OFF"         scanning is not running although a device is wanted
+    //!   "IDLE"        scanning is not needed (all devices paired or off)
+    //!   "SCAN ERR n"  the system refused to scan (status n), see the log
+    //!   " setup"      GATT profile not confirmed yet (pairing waits for it)
     //!   "5 dev"       5 named devices heard in the last 30 s
     //!   "+?"          unnamed adverts are also being heard
     //!   " UART"       some advert lists the service UUID
     //! @return Status text
     function getScanStatus() as String {
-        if (mProfileFailed) {
-            return "NO PROFILE";
-        }
         if (mPairingSlot >= 0) {
             return "PAIR";
         }
         if (!mScanning) {
-            return "OFF";
+            var err = mScanError;
+            if (err != null) {
+                return err;
+            }
+            return hasUnpairedSlot() ? "OFF" : "IDLE";
         }
         var now = System.getTimer();
         var named = 0;
@@ -336,6 +361,12 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
         }
         if (mServiceSeenMs != 0 && (now - mServiceSeenMs) <= SEEN_EXPIRY_MS) {
             text += " UART";
+        }
+        // Scanning works without the profile, but pairing needs it.
+        if (mProfileFailed) {
+            text += " NO PROFILE";
+        } else if (!mProfileReady) {
+            text += " setup";
         }
         return text;
     }
@@ -441,6 +472,12 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
     //! @param status    Ble.STATUS_SUCCESS on success
     function onScanStateChange(scanState as Ble.ScanState, status as Ble.Status) as Void {
         mScanning = (status == Ble.STATUS_SUCCESS && scanState == Ble.SCAN_STATE_SCANNING);
+        if (status == Ble.STATUS_SUCCESS) {
+            mScanError = null;
+        } else {
+            System.println("EnvSensor: scan state change failed, status " + status);
+            mScanError = "SCAN ERR " + status;
+        }
     }
 
     //! Called with batches of advertising packets while scanning. Each result
@@ -473,8 +510,9 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
             }
 
             // No pairing while another pairing is in flight (one at a time
-            // keeps the BLE stack happy) or before the profile is registered.
-            if (mPairingSlot >= 0 || !mProfileReady) {
+            // keeps the BLE stack happy), before the profile is registered,
+            // or when no further connection is available.
+            if (mPairingSlot >= 0 || !mProfileReady || !canPairMore()) {
                 continue;
             }
 
@@ -673,7 +711,8 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
         }
 
         mProfileReady = false;
-        mProfileFailed = false;
+        mProfileRequestMs = System.getTimer();
+        mProfileAttempts++;
         var profile = {
             :uuid => svc,
             :characteristics => [{
@@ -951,6 +990,18 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
         return EnvSensorApp.MAX_DEVICES;
     }
 
+    //! @return true if another device may be paired: always when nothing is
+    //! paired yet (some products report 0 free connections even then),
+    //! otherwise when the platform reports a free connection
+    private function canPairMore() as Boolean {
+        for (var i = 0; i < mSlots.size(); i++) {
+            if (mSlots[i].device != null) {
+                return freeConnections() > 0;
+            }
+        }
+        return true;
+    }
+
     //! @return true if some enabled slot still needs a device
     private function hasUnpairedSlot() as Boolean {
         for (var i = 0; i < mSlots.size(); i++) {
@@ -967,7 +1018,7 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
     //! connect. Its last readings are kept.
     //! @param now Current System.getTimer() value
     private function cycleConnectionsIfNeeded(now as Number) as Void {
-        if (mPairingSlot >= 0 || !hasUnpairedSlot() || freeConnections() > 0) {
+        if (mPairingSlot >= 0 || !hasUnpairedSlot() || canPairMore()) {
             return;
         }
 
@@ -992,10 +1043,12 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
         }
     }
 
-    //! Starts scanning when a profile is ready, a slot is waiting, nothing is
-    //! being paired and a connection is free; stops it otherwise (saves power).
+    //! Scans whenever a slot is waiting and nothing is being paired; stops
+    //! otherwise (saves power). Scanning deliberately does not wait for the
+    //! GATT profile or a free connection: only pairing needs those, and the
+    //! nearby-device list must fill even when pairing is not possible.
     private function updateScanState() as Void {
-        var want = mPairingSlot < 0 && mProfileReady && hasUnpairedSlot() && freeConnections() > 0;
+        var want = mPairingSlot < 0 && hasUnpairedSlot();
         setScanning(want);
     }
 
@@ -1012,6 +1065,7 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
             mScanning = on;
         } catch (e) {
             System.println("EnvSensor: setScanState failed: " + e.getErrorMessage());
+            mScanError = "SCAN ERR";
         }
     }
 }
