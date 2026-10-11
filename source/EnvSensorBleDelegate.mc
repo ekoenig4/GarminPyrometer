@@ -18,6 +18,11 @@
 //   * If the product supports fewer simultaneous connections than there are
 //     configured devices, connected devices are rotated out periodically so
 //     every sensor gets a turn (sequential cycling).
+//   * RuuviTags (and Ruuvi-firmware sensors such as the HOTAIR pyrometer)
+//     broadcast temperature, humidity and pressure in their advertisement
+//     (manufacturer data 0x0499, data format 5). Those are decoded straight
+//     from scan results with no connection; a slot is bound to a tag by the
+//     MAC address carried in that data.
 //   * Nearby advertisers heard while scanning are saved to Application.Storage
 //     so the on-device settings menu can list them without using BLE itself
 //     (BLE use from the settings menu crashed the Montana on exit).
@@ -58,6 +63,10 @@ class EnvDeviceState {
     public var pairStartMs as Number = 0;             // When pairDevice() was issued (0 = idle)
     public var notifying as Boolean = false;          // CCCD written successfully
     public var cooldownUntilMs as Number = 0;         // Ignore adverts until then (cycling)
+
+    // Advertisement-only sensors (Ruuvi): readings come from broadcasts.
+    public var advertMode as Boolean = false;         // true once bound to a broadcaster
+    public var boundMac as String? = null;            // 12 hex digits of the bound tag
 
     //! Constructor.
     //! @param id   Advertised BLE name ("" disables the slot)
@@ -106,6 +115,12 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
     private const PUBLISH_INTERVAL_MS  = 10000;   // nearby list -> Storage
     private const PROFILE_RETRY_MS     = 10000;   // no onProfileRegister() -> retry
     private const PROFILE_MAX_ATTEMPTS = 3;
+    private const ADVERT_LOST_MS       = 60000;   // broadcaster silent -> "---"
+
+    // Ruuvi manufacturer data: company id 0x0499 (little endian 0x99 0x04).
+    private const RUUVI_COMPANY_LO = 0x99;
+    private const RUUVI_COMPANY_HI = 0x04;
+    private const RUUVI_FORMAT_5   = 0x05;
 
     // Application.Storage key of the nearby-device list (read by settings).
     public static const NEARBY_KEY = "nearby";
@@ -152,6 +167,7 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
     private var mUnnamedSvcMs as Number = 0;
     private var mUnnamedSvcRssi as Number = -127;
     private var mServiceSeenMs as Number = 0;
+    private var mRuuviSeenMs as Number = 0;   // last Ruuvi broadcast heard
 
     // True when the GATT profile could not be registered (no pairing possible).
     private var mProfileFailed as Boolean = false;
@@ -301,6 +317,13 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
                 slot.setState(keepState);
             }
 
+            // ---- Broadcaster went quiet: show "---" until it is heard again ----
+            if (slot.advertMode && slot.state == EnvDeviceState.STATE_CONNECTED
+                    && (now - slot.lastDataMs) > ADVERT_LOST_MS) {
+                System.println("EnvSensor: no broadcasts from " + slot.displayName);
+                slot.setState(EnvDeviceState.STATE_UNAVAILABLE);
+            }
+
             // ---- Lost link that the system failed to restore: start over ----
             if (slot.state == EnvDeviceState.STATE_UNAVAILABLE && slot.device != null
                     && (now - slot.stateSinceMs) > RECONNECT_TIMEOUT_MS) {
@@ -334,6 +357,7 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
     //!   "5 dev"       5 named devices heard in the last 30 s
     //!   "+?"          unnamed adverts are also being heard
     //!   " UART"       some advert lists the service UUID
+    //!   " RUUVI"      a Ruuvi data-format-5 broadcast was heard
     //! @return Status text
     function getScanStatus() as String {
         if (mPairingSlot >= 0) {
@@ -361,6 +385,9 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
         }
         if (mServiceSeenMs != 0 && (now - mServiceSeenMs) <= SEEN_EXPIRY_MS) {
             text += " UART";
+        }
+        if (mRuuviSeenMs != 0 && (now - mRuuviSeenMs) <= SEEN_EXPIRY_MS) {
+            text += " RUUVI";
         }
         // Scanning works without the profile, but pairing needs it.
         if (mProfileFailed) {
@@ -492,9 +519,26 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
             if (name != null && name.length() == 0) {
                 name = null;
             }
-            var hasService = advertisesService(result);
-
             var now = System.getTimer();
+
+            // ---- Ruuvi broadcast: decode in place, never connect ----
+            var ruuvi = decodeRuuvi(result);
+            if (ruuvi != null) {
+                var mac = ruuvi[3] as String;
+                mRuuviSeenMs = now;
+                // The name usually sits in the scan response, which this
+                // product does not receive; fall back to Ruuvi's own
+                // "Ruuvi XXXX" naming (last 4 hex digits of the MAC).
+                var label = (name != null) ? name : ("Ruuvi " + mac.substring(8, 12));
+                recordSeen(label, result.getRssi(), true);
+                var ruuviSlot = findSlotForRuuvi(mac, name);
+                if (ruuviSlot >= 0) {
+                    applyRuuvi(ruuviSlot, mac, ruuvi);
+                }
+                continue;
+            }
+
+            var hasService = advertisesService(result);
             if (hasService) {
                 mServiceSeenMs = now;
             }
@@ -893,7 +937,8 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
 
         for (var i = 0; i < mSlots.size(); i++) {
             var slot = mSlots[i];
-            if (!slot.isEnabled() || slot.device != null || now < slot.cooldownUntilMs) {
+            if (!slot.isEnabled() || slot.device != null || slot.advertMode
+                    || now < slot.cooldownUntilMs) {
                 continue;
             }
             if (slot.bleId.equals(WILDCARD_ID)) {
@@ -905,6 +950,152 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
             }
         }
         return wildcard;
+    }
+
+    // ---------------------------------------------------------------------
+    // Ruuvi broadcasts
+    // ---------------------------------------------------------------------
+
+    //! Decodes a Ruuvi data format 5 (RAWv2) broadcast from the raw
+    //! advertising data. Layout after the 0x0499 company id:
+    //!   [0] 0x05  [1-2] temp int16 x0.005 C  [3-4] humidity uint16 x0.0025 %
+    //!   [5-6] pressure uint16 +50000 Pa  ...  [18-23] MAC address
+    //! @param result Scan result
+    //! @return [temperatureC, humidityPct, pressureHpa, macHex] or null if
+    //!         this is not a valid Ruuvi format 5 broadcast
+    private function decodeRuuvi(result as Ble.ScanResult) as Array? {
+        var data = null;
+        try {
+            data = ruuviManufacturerData(result.getRawData());
+        } catch (e) {
+            return null;
+        }
+        if (data == null || data.size() < 24 || data[0] != RUUVI_FORMAT_5) {
+            return null;
+        }
+
+        var t = (data[1] << 8) | data[2];
+        var h = (data[3] << 8) | data[4];
+        var p = (data[5] << 8) | data[6];
+        // 0x8000 / 0xFFFF mark "not available" in format 5.
+        if (t == 0x8000 || h == 0xFFFF || p == 0xFFFF) {
+            return null;
+        }
+        if (t >= 0x8000) {
+            t -= 0x10000;   // int16 sign
+        }
+
+        var mac = "";
+        for (var i = 18; i < 24; i++) {
+            mac += data[i].format("%02X");
+        }
+
+        var hum = h * 0.0025;
+        if (hum > 100.0) {
+            hum = 100.0;
+        }
+        return [t * 0.005, hum, (p + 50000) / 100.0, mac];
+    }
+
+    //! Finds the Ruuvi manufacturer data in raw advertising data, which is a
+    //! sequence of [length][type][payload...] structures (type 0xFF =
+    //! manufacturer specific, payload starts with the company id).
+    //! @param raw Raw advertising bytes (may be null)
+    //! @return Bytes after the company id, or null if not a Ruuvi advert
+    private function ruuviManufacturerData(raw as Lang.ByteArray?) as Lang.ByteArray? {
+        if (raw == null) {
+            return null;
+        }
+        var i = 0;
+        while (i + 1 < raw.size()) {
+            var len = raw[i];
+            if (len == 0 || i + len >= raw.size()) {
+                return null;
+            }
+            if (raw[i + 1] == 0xFF && len >= 3
+                    && raw[i + 2] == RUUVI_COMPANY_LO && raw[i + 3] == RUUVI_COMPANY_HI) {
+                return raw.slice(i + 4, i + 1 + len);
+            }
+            i += len + 1;
+        }
+        return null;
+    }
+
+    //! Picks the slot a Ruuvi broadcast belongs to:
+    //!   1. the slot already bound to this MAC, else
+    //!   2. an unbound slot whose BLE id names this tag (see ruuviIdMatches), else
+    //!   3. an unbound wildcard ("*") slot.
+    //! @param mac  12 hex digits from the broadcast
+    //! @param name Advertised name, usually null
+    //! @return Slot index, or -1
+    private function findSlotForRuuvi(mac as String, name as String?) as Number {
+        for (var i = 0; i < mSlots.size(); i++) {
+            var bound = mSlots[i].boundMac;
+            if (mSlots[i].isEnabled() && bound != null && bound.equals(mac)) {
+                return i;
+            }
+        }
+        var wildcard = -1;
+        for (var i = 0; i < mSlots.size(); i++) {
+            var slot = mSlots[i];
+            if (!slot.isEnabled() || slot.boundMac != null || slot.device != null) {
+                continue;
+            }
+            if (slot.bleId.equals(WILDCARD_ID)) {
+                if (wildcard < 0) {
+                    wildcard = i;
+                }
+            } else if (ruuviIdMatches(slot.bleId, mac, name)) {
+                return i;
+            }
+        }
+        return wildcard;
+    }
+
+    //! A BLE id names a Ruuvi tag if it equals the advertised name, the MAC
+    //! (with or without separators), or ends in the MAC's last 4 hex digits
+    //! the way Ruuvi names do ("Ruuvi BBF3", "HOTAIR BBF3").
+    //! @param id   Stored BLE id
+    //! @param mac  12 hex digits from the broadcast
+    //! @param name Advertised name (may be null)
+    //! @return true on a match
+    private function ruuviIdMatches(id as String, mac as String, name as String?) as Boolean {
+        if (name != null && id.toUpper().equals(name.toUpper())) {
+            return true;
+        }
+        var chars = id.toUpper().toCharArray();
+        var norm = "";
+        for (var i = 0; i < chars.size(); i++) {
+            var c = chars[i];
+            if ((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z')) {
+                norm += c.toString();
+            }
+        }
+        if (norm.equals(mac)) {
+            return true;
+        }
+        var n = norm.length();
+        return n >= 4 && norm.substring(n - 4, n).equals(mac.substring(8, 12));
+    }
+
+    //! Stores decoded Ruuvi readings in a slot and binds it to the tag.
+    //! @param idx  Slot index
+    //! @param mac  12 hex digits from the broadcast
+    //! @param vals [temperatureC, humidityPct, pressureHpa, macHex]
+    private function applyRuuvi(idx as Number, mac as String, vals as Array) as Void {
+        var slot = mSlots[idx];
+        if (slot.boundMac == null) {
+            System.println("EnvSensor: " + slot.displayName + " bound to Ruuvi " + mac);
+        }
+        slot.boundMac = mac;
+        slot.advertMode = true;
+        slot.temperature = vals[0] as Float;
+        slot.humidity = vals[1] as Float;
+        slot.pressure = vals[2] as Float;
+        slot.lastDataMs = System.getTimer();
+        if (slot.state != EnvDeviceState.STATE_CONNECTED) {
+            slot.setState(EnvDeviceState.STATE_CONNECTED);
+        }
     }
 
     //! @param result Scan result
@@ -1012,6 +1203,18 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
         return false;
     }
 
+    //! @return true if an enabled slot waits for a GATT connection (slots fed
+    //! by broadcasts never need one)
+    private function hasSlotNeedingConnection() as Boolean {
+        for (var i = 0; i < mSlots.size(); i++) {
+            var slot = mSlots[i];
+            if (slot.isEnabled() && slot.device == null && !slot.advertMode) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     //! @return true if at least one slot has a BLE id configured
     private function hasEnabledSlot() as Boolean {
         for (var i = 0; i < mSlots.size(); i++) {
@@ -1028,7 +1231,7 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
     //! connect. Its last readings are kept.
     //! @param now Current System.getTimer() value
     private function cycleConnectionsIfNeeded(now as Number) as Void {
-        if (mPairingSlot >= 0 || !hasUnpairedSlot() || canPairMore()) {
+        if (mPairingSlot >= 0 || !hasSlotNeedingConnection() || canPairMore()) {
             return;
         }
 

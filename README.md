@@ -52,7 +52,24 @@ BLE → Settings**, then for each device:
 
 Invalid UUIDs fall back to the Nordic defaults. Changes take effect immediately.
 
-## Sensor protocol
+## Sensor protocols
+
+### RuuviTag / Ruuvi firmware (e.g. HOTAIR pyrometer) — no connection
+
+Sensors running Ruuvi firmware broadcast their readings in the advertisement
+(manufacturer data, company `0x0499`, data format 5 / RAWv2): temperature
+(int16 × 0.005 °C), humidity (uint16 × 0.0025 %), pressure (uint16 + 50000 Pa)
+and the tag's MAC address. The data field decodes these broadcasts directly;
+nothing is paired or connected, so any number of tags can be read.
+
+A slot is bound to a tag by MAC address. A BLE id matches a tag if it is the
+tag's name, its MAC (`EF:1E:4A:22:BB:F3`), or ends in the MAC's last four hex
+digits (`HOTAIR BBF3`, `Ruuvi BBF3`). Auto (`*`) binds to the first tag heard.
+Ruuvi tags put their name in the scan response, which the Montana does not
+receive, so the nearby list shows them as `Ruuvi XXXX`.
+
+### Nordic UART text sensors
+
 
 The sensor sends notifications on the data characteristic containing an ASCII
 string `"<temperature>,<humidity>,<pressure>"` (°C, %RH, hPa), e.g.
@@ -64,7 +81,7 @@ non-numeric or out of range are dropped and the last good values are kept.
 
 | Text | Meaning |
 | --- | --- |
-| `SCAN <status>` | Searching for the device. Status: `5 dev` = named devices heard, `+?` = unnamed adverts heard, `UART` = an advert lists the service UUID, `setup` = waiting for the GATT profile (pairing waits for it), `NO PROFILE` = profile registration failed, `PAIR` = match found and pairing, `OFF` = not scanning, `SCAN ERR n` = the system refused to scan, `IDLE` = no scan needed |
+| `SCAN <status>` | Searching for the device. Status: `5 dev` = named devices heard, `+?` = unnamed adverts heard, `UART` = an advert lists the service UUID, `RUUVI` = a Ruuvi broadcast was heard, `setup` = waiting for the GATT profile (pairing waits for it), `NO PROFILE` = profile registration failed, `PAIR` = match found and pairing, `OFF` = not scanning, `SCAN ERR n` = the system refused to scan, `IDLE` = no scan needed |
 | `---` | Device was connected and the link dropped; reconnecting |
 | `WAIT` | Connected, no data yet |
 | `T:… H:… P:…?` | Latest readings; `?` means no new data for 30 s |
