@@ -1,6 +1,2 @@
-# Connect IQ build file for the RuuviSensor data field.
+# Connect IQ build file for the EnvSensor data field.
 project.manifest = manifest.xml
-
-# Device builds use BLE; the simulator's fake tags (RuuviFakeSource.mc) are
-# left out. sim.jungle swaps this for simulator builds.
-base.excludeAnnotations = fakeBle

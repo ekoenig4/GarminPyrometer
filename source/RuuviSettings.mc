@@ -10,7 +10,7 @@
 //   +-- Sensors           (own sub-menu so the list is clearly separate)
 //   |   +-- + Add sensor  -> Ruuvi tags recently heard by the data field
 //   |   +-- <sensor> ...  (one entry per listed sensor)
-//   |       +-- Show      -> All / Temperature / Humidity / Pressure / Battery
+//   |       +-- Show      -> All / Temperature / Humidity / Pressure
 //   |       +-- Rename    -> on-screen keyboard (if the product has one)
 //   |       +-- Remove
 //   +-- Temperature unit  -> Device setting / °C / °F

@@ -115,10 +115,7 @@ class RuuviSensorApp extends Application.AppBase {
         }
         try {
             var scanner = new RuuviScanner();
-            // Simulator builds feed fake tags and never touch BLE.
-            if (!scanner.isFake()) {
-                Ble.setDelegate(scanner);
-            }
+            Ble.setDelegate(scanner);
             mScanner = scanner;
             scanner.start();
         } catch (e) {

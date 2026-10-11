@@ -9,7 +9,6 @@
 //     Balloon 1   T:23.5 H:61 P:1013     (Show = All)
 //     Balloon 2   SCAN 3 found           (not heard yet)
 //     Balloon 3   ---                    (no broadcast for 60 s)
-//     Balloon 4   23.5 °C!               (tag's battery is low)
 //
 // The field is drawn by hand (DataField + onUpdate) so single readings use
 // the device's number fonts with the unit in a smaller font beside them, like
@@ -166,8 +165,7 @@ class RuuviSensorView extends WatchUi.DataField {
     }
 
     //! Prepares the value for one sensor (its name is in the header).
-    //! @param reading [tempC, humidity, hPa, timerMs, batteryVolts?] or null if
-    //!                not heard yet
+    //! @param reading [tempC, humidity, hPa, timerMs] or null if not heard yet
     //! @param show    RuuviConfig.SHOW_* value
     //! @param scanner Scanner (for the status text)
     //! @param now     System.getTimer()
@@ -186,12 +184,7 @@ class RuuviSensorView extends WatchUi.DataField {
         var t = reading[0] as Float;
         var h = reading[1] as Float;
         var p = reading[2] as Float;
-        var volts = reading[4] as Float?;
-        // After the unit: "?" if the reading is stale, "!" if the battery is low.
         var mark = (age > STALE_DATA_MS) ? "?" : "";
-        if (volts != null && RuuviDecode.isLowBattery(volts, t)) {
-            mark += "!";
-        }
 
         // Convert to the configured units (Ruuvi data is °C and hPa).
         var app = getApp();
@@ -215,13 +208,6 @@ class RuuviSensorView extends WatchUi.DataField {
             setNumber(h.format("%.0f"), "%RH" + mark);
         } else if (show == RuuviConfig.SHOW_PRESSURE) {
             setNumber(presText, presSuffix + mark);
-        } else if (show == RuuviConfig.SHOW_BATTERY) {
-            if (volts == null) {
-                // The tag does not report its battery voltage.
-                setText("BAT ---");
-            } else {
-                setNumber(volts.format("%.2f"), "V" + mark);
-            }
         } else if (show == RuuviConfig.SHOW_ALL) {
             setText("T:" + tempText + " H:" + h.format("%.0f") + " P:" + presText + mark);
         } else {

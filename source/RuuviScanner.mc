@@ -14,8 +14,6 @@
 //     it without using BLE itself.
 //   * Data fields cannot rely on Timer.Timer, so periodic work runs from
 //     tick(), which the view calls once per second from compute().
-//   * Simulator builds (sim.jungle) replace BLE with RuuviFakeSource, which
-//     feeds made-up adverts to processAdvert() from tick().
 //
 import Toybox.Application;
 import Toybox.Lang;
@@ -34,14 +32,18 @@ class RuuviScanner extends Ble.BleDelegate {
     // Cap on remembered nearby tags.
     private const SEEN_MAX = 20;
 
+    // Ruuvi manufacturer data: company id 0x0499 (little endian 0x99 0x04).
+    private const RUUVI_COMPANY_LO = 0x99;
+    private const RUUVI_COMPANY_HI = 0x04;
+    private const RUUVI_FORMAT_5   = 0x05;
+
     // Sensor list rows [mac, name, show] (see RuuviConfig).
     private var mDevices as Array<Array>;
 
     // MAC chosen under Display ("" if none: the first sensor is shown).
     private var mActive as String = "";
 
-    // Latest readings of listed tags:
-    // mac => [tempC, humidity, hPa, timerMs, batteryVolts?].
+    // Latest readings of listed tags: mac => [tempC, humidity, hPa, timerMs].
     private var mReadings as Dictionary<String, Array>;
 
     // Every tag heard: mac => [label, rssi, timerMs].
@@ -55,9 +57,6 @@ class RuuviScanner extends Ble.BleDelegate {
     private var mLastPublishMs as Number = 0;
     private var mLastReloadMs as Number = 0;
 
-    // Made-up tags instead of BLE (simulator builds only), else null.
-    private var mFake;
-
     //! Constructor. Loads the sensor list.
     function initialize() {
         BleDelegate.initialize();
@@ -66,19 +65,13 @@ class RuuviScanner extends Ble.BleDelegate {
         mReadings = {} as Dictionary<String, Array>;
         mSeen = {} as Dictionary<String, Array>;
         mLastReloadMs = System.getTimer();
-        mFake = createFakeSource();
     }
 
     // ---------------------------------------------------------------------
     // Public API
     // ---------------------------------------------------------------------
 
-    //! @return true if tags are made up (simulator build): BLE is not used
-    function isFake() as Boolean {
-        return mFake != null;
-    }
-
-    //! Starts scanning (call after Ble.setDelegate(), unless isFake()).
+    //! Starts scanning (call after Ble.setDelegate()).
     function start() as Void {
         setScanning(true);
     }
@@ -99,11 +92,6 @@ class RuuviScanner extends Ble.BleDelegate {
     //! Periodic housekeeping; called once per second by the view.
     function tick() as Void {
         var now = System.getTimer();
-
-        var fake = mFake;
-        if (fake != null) {
-            fake.tick(self, now);
-        }
 
         // ---- Keep scanning: broadcasts are the only data source ----
         if (!mScanning && !mEnded && (now - mLastScanRequestMs) >= SCAN_RETRY_MS) {
@@ -133,8 +121,7 @@ class RuuviScanner extends Ble.BleDelegate {
     }
 
     //! @param mac 12 hex digits
-    //! @return [tempC, humidity, hPa, timerMs, batteryVolts?] or null if not
-    //!         heard yet
+    //! @return [tempC, humidity, hPa, timerMs] or null if not heard yet
     function getReading(mac as String) as Array? {
         return mReadings.hasKey(mac) ? mReadings[mac] : null;
     }
@@ -180,40 +167,93 @@ class RuuviScanner extends Ble.BleDelegate {
             if (!(result instanceof Ble.ScanResult)) {
                 continue;
             }
-            var raw = null;
-            try {
-                raw = result.getRawData();
-            } catch (e) {
+            var vals = decodeRuuvi(result);
+            if (vals == null) {
                 continue;
             }
+            var mac = vals[3] as String;
+
+            // The name usually sits in the scan response, which this product
+            // does not receive; fall back to Ruuvi's own "Ruuvi XXXX" naming
+            // (last 4 hex digits of the MAC).
+            var name = result.getDeviceName();
+            var label = (name != null && name.length() > 0) ? name : ("Ruuvi " + mac.substring(8, 12));
             var rssi = result.getRssi();
-            processAdvert(raw, result.getDeviceName(), (rssi != null) ? rssi : -127, now);
+            recordSeen(mac, label, (rssi != null) ? rssi : -127, now);
+
+            if (RuuviConfig.findDevice(mDevices, mac) >= 0) {
+                mReadings[mac] = [vals[0], vals[1], vals[2], now];
+            }
         }
     }
 
-    //! Records one advert if it is a valid Ruuvi data format 5 broadcast.
-    //! Public so RuuviFakeSource can feed made-up adverts.
-    //! @param raw  Raw advertising bytes
-    //! @param name Device name from the scan result, or null
-    //! @param rssi Signal strength (dBm)
-    //! @param now  System.getTimer()
-    function processAdvert(raw as Lang.ByteArray?, name as String?, rssi as Number, now as Number) as Void {
-        var vals = RuuviDecode.decodeFormat5(RuuviDecode.manufacturerData(raw));
-        if (vals == null) {
-            return;
-        }
-        var mac = vals[RuuviDecode.V_MAC] as String;
+    // ---------------------------------------------------------------------
+    // Ruuvi decoding
+    // ---------------------------------------------------------------------
 
-        // The name usually sits in the scan response, which this product
-        // does not receive; fall back to Ruuvi's own "Ruuvi XXXX" naming
-        // (last 4 hex digits of the MAC).
-        var label = (name != null && name.length() > 0) ? name : ("Ruuvi " + mac.substring(8, 12));
-        recordSeen(mac, label, rssi, now);
-
-        if (RuuviConfig.findDevice(mDevices, mac) >= 0) {
-            mReadings[mac] = [vals[RuuviDecode.V_TEMP], vals[RuuviDecode.V_HUMIDITY],
-                vals[RuuviDecode.V_PRESSURE], now, vals[RuuviDecode.V_BATTERY]];
+    //! Decodes a Ruuvi data format 5 (RAWv2) broadcast from the raw
+    //! advertising data. Layout after the 0x0499 company id:
+    //!   [0] 0x05  [1-2] temp int16 x0.005 C  [3-4] humidity uint16 x0.0025 %
+    //!   [5-6] pressure uint16 +50000 Pa  ...  [18-23] MAC address
+    //! @param result Scan result
+    //! @return [temperatureC, humidityPct, pressureHpa, macHex] or null if
+    //!         this is not a valid Ruuvi format 5 broadcast
+    private function decodeRuuvi(result as Ble.ScanResult) as Array? {
+        var data = null;
+        try {
+            data = ruuviManufacturerData(result.getRawData());
+        } catch (e) {
+            return null;
         }
+        if (data == null || data.size() < 24 || data[0] != RUUVI_FORMAT_5) {
+            return null;
+        }
+
+        var t = (data[1] << 8) | data[2];
+        var h = (data[3] << 8) | data[4];
+        var p = (data[5] << 8) | data[6];
+        // 0x8000 / 0xFFFF mark "not available" in format 5.
+        if (t == 0x8000 || h == 0xFFFF || p == 0xFFFF) {
+            return null;
+        }
+        if (t >= 0x8000) {
+            t -= 0x10000;   // int16 sign
+        }
+
+        var mac = "";
+        for (var i = 18; i < 24; i++) {
+            mac += data[i].format("%02X");
+        }
+
+        var hum = h * 0.0025;
+        if (hum > 100.0) {
+            hum = 100.0;
+        }
+        return [t * 0.005, hum, (p + 50000) / 100.0, mac];
+    }
+
+    //! Finds the Ruuvi manufacturer data in raw advertising data, which is a
+    //! sequence of [length][type][payload...] structures (type 0xFF =
+    //! manufacturer specific, payload starts with the company id).
+    //! @param raw Raw advertising bytes (may be null)
+    //! @return Bytes after the company id, or null if not a Ruuvi advert
+    private function ruuviManufacturerData(raw as Lang.ByteArray?) as Lang.ByteArray? {
+        if (raw == null) {
+            return null;
+        }
+        var i = 0;
+        while (i + 1 < raw.size()) {
+            var len = raw[i];
+            if (len == 0 || i + len >= raw.size()) {
+                return null;
+            }
+            if (raw[i + 1] == 0xFF && len >= 3
+                    && raw[i + 2] == RUUVI_COMPANY_LO && raw[i + 3] == RUUVI_COMPANY_HI) {
+                return raw.slice(i + 4, i + 1 + len);
+            }
+            i += len + 1;
+        }
+        return null;
     }
 
     // ---------------------------------------------------------------------
@@ -306,11 +346,6 @@ class RuuviScanner extends Ble.BleDelegate {
             return;
         }
         mLastScanRequestMs = System.getTimer();
-        if (mFake != null) {
-            // Made-up tags are always "heard"; BLE is never touched.
-            mScanning = on;
-            return;
-        }
         try {
             Ble.setScanState(on ? Ble.SCAN_STATE_SCANNING : Ble.SCAN_STATE_OFF);
             // Optimistic; onScanStateChange() confirms the real state.

@@ -40,8 +40,7 @@ module RuuviConfig {
     const SHOW_TEMPERATURE = 1;   // "20.3 °C" (default)
     const SHOW_HUMIDITY = 2;      // "37 %RH"
     const SHOW_PRESSURE = 3;      // "795 hPa"
-    const SHOW_BATTERY = 4;       // "2.95 V"
-    const SHOW_LABELS = ["All", "Temperature", "Humidity", "Pressure", "Battery"];
+    const SHOW_LABELS = ["All", "Temperature", "Humidity", "Pressure"];
 
     // ---- Display units (Properties) ----
     const TEMP_UNIT_KEY = "TempUnit";

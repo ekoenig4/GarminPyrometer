@@ -1,5 +1,0 @@
-# Simulator build: made-up Ruuvi tags instead of BLE (RuuviFakeSource.mc).
-# Use after monkey.jungle, e.g.
-#   monkeyc -d montana7xx -f "monkey.jungle;sim.jungle" -o bin/RuuviSensorSim.prg -y <developer_key>
-# Never sideload this build: it ignores real tags.
-base.excludeAnnotations = realBle
