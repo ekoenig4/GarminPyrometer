@@ -1,6 +1,6 @@
 # RuuviSensor — Garmin Connect IQ data field
 
-A `SimpleDataField` for the Garmin Montana 700 series (`montana7xx`, Connect IQ
+A Connect IQ data field for the Garmin Montana 700 series (`montana7xx`, Connect IQ
 API 3.2.0+) that connects to up to three BLE environmental sensors and shows
 temperature, relative humidity and barometric pressure. The field's header is
 the device's display name; the value is the quantity chosen in its **Show**
@@ -9,8 +9,8 @@ setting:
 | Show | Header | Value |
 | --- | --- | --- |
 | All | `Balloon 1` | `T:23.5 H:61 P:1013` |
-| Temperature | `Balloon 1` | `23.5°C` |
-| Humidity | `Balloon 1` | `61%RH` |
+| Temperature (default) | `Balloon 1` | `23.5 °C` |
+| Humidity | `Balloon 1` | `61 %RH` |
 | Pressure | `Balloon 1` | `1013 hPa` |
 
 ## Layout
@@ -20,7 +20,7 @@ setting:
 | `manifest.xml` | App id, `datafield` type, `montana7xx`, `BluetoothLowEnergy` permission |
 | `monkey.jungle` | Build file |
 | `source/EnvSensorApp.mc` | Entry point; reads settings, applies them live in `onSettingsChanged()` |
-| `source/EnvSensorView.mc` | `SimpleDataField` view; rotates through devices every 3 s |
+| `source/EnvSensorView.mc` | Data field view (drawn like the native fields); rotates through devices every 3 s |
 | `source/EnvSensorSettings.mc` | On-device settings menu (needed for USB installs) |
 | `source/EnvSensorBleDelegate.mc` | Scanning, pairing, notification setup, parsing, per-device state |
 | `resources/properties/properties.xml` | Default setting values |

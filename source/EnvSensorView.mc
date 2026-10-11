@@ -1,25 +1,33 @@
 //
 // EnvSensorView.mc
 //
-// SimpleDataField that shows temperature, humidity and/or pressure from the
-// configured BLE sensors. The field's label (header) is the device's display
-// name and the value is the quantity chosen in that device's "Show" setting:
+// Data field that shows temperature, humidity and/or pressure from the
+// configured BLE sensors. The header is the device's display name and the
+// value is the quantity chosen in that device's "Show" setting:
 //
 //     header      value
+//     Balloon 1   23.5 °C                (Show = Temperature, the default)
 //     Balloon 1   T:23.5 H:61 P:1013     (Show = All)
-//     Balloon 1   23.5°C                 (Show = Temperature)
 //     Balloon 2   SCAN 5 dev RUUVI
 //     Balloon 3   ---
 //
-// A simple data field renders a single value, so when several devices are
-// configured the view rotates through them every ROTATE_INTERVAL_MS.
+// The field is drawn by hand (DataField + onUpdate) rather than as a
+// SimpleDataField: a SimpleDataField value containing a unit such as "°C" is
+// rendered in a text font, noticeably smaller than the number font the
+// device's own data fields use. Here single readings are drawn in the largest
+// number font that fits, with the unit in a small font beside it, like the
+// native fields.
+//
+// When several devices are configured the view rotates through them every
+// ROTATE_INTERVAL_MS.
 //
 import Toybox.Activity;
+import Toybox.Graphics;
 import Toybox.Lang;
 import Toybox.System;
 import Toybox.WatchUi;
 
-class EnvSensorView extends WatchUi.SimpleDataField {
+class EnvSensorView extends WatchUi.DataField {
 
     // How long each device stays on screen when several are configured.
     private const ROTATE_INTERVAL_MS = 3000;
@@ -30,6 +38,23 @@ class EnvSensorView extends WatchUi.SimpleDataField {
     // Header when no device is configured.
     private const APP_LABEL = "RuuviSensor";
 
+    // Value fonts, largest first. Number fonts only contain digits and a few
+    // symbols, so they are used for plain numbers only.
+    private const NUMBER_FONTS = [
+        Graphics.FONT_NUMBER_THAI_HOT, Graphics.FONT_NUMBER_HOT,
+        Graphics.FONT_NUMBER_MEDIUM, Graphics.FONT_NUMBER_MILD,
+        Graphics.FONT_LARGE, Graphics.FONT_MEDIUM, Graphics.FONT_SMALL,
+        Graphics.FONT_TINY, Graphics.FONT_XTINY
+    ];
+    // Share of a font's line height taken by digits / capitals (the rest is
+    // padding and descent); used to fit and align values.
+    private const GLYPH_RATIO = 0.8;
+
+    private const TEXT_FONTS = [
+        Graphics.FONT_LARGE, Graphics.FONT_MEDIUM, Graphics.FONT_SMALL,
+        Graphics.FONT_TINY, Graphics.FONT_XTINY
+    ];
+
     // BLE delegate, obtained from the app once BLE has started.
     private var mBle as EnvSensorBleDelegate?;
 
@@ -39,15 +64,20 @@ class EnvSensorView extends WatchUi.SimpleDataField {
     // System.getTimer() value when mActiveSlot was last advanced.
     private var mLastRotateMs as Number = 0;
 
+    // What onUpdate() draws, prepared by compute().
+    private var mLabel as String = APP_LABEL;  // header
+    private var mValue as String = "";         // main value
+    private var mUnit as String = "";          // unit drawn after a numeric value
+    private var mNumeric as Boolean = false;   // mValue is a plain number
+
     //! Constructor.
     function initialize() {
-        SimpleDataField.initialize();
-        label = initialLabel();
+        DataField.initialize();
+        mLabel = initialLabel();
         mLastRotateMs = System.getTimer();
     }
 
-    //! Header before BLE starts: the first configured device's display name
-    //! (some products only read the label once, at start-up).
+    //! Header before BLE starts: the first configured device's display name.
     //! @return Label text
     private function initialLabel() as String {
         for (var i = 0; i < EnvSensorApp.MAX_DEVICES; i++) {
@@ -59,16 +89,16 @@ class EnvSensorView extends WatchUi.SimpleDataField {
     }
 
     //! Called once per second by the activity. Drives BLE housekeeping and
-    //! returns the text for the active device.
+    //! prepares the header / value for the active device.
     //! @param info Activity info (unused; data comes from BLE)
-    //! @return Formatted display string
-    function compute(info as Activity.Info) {
+    function compute(info as Activity.Info) as Void {
         // BLE starts a few seconds after the field does (see EnvSensorApp).
         var app = getApp();
         var ble = app.ensureBle();
         mBle = ble;
         if (ble == null) {
-            return app.hasBle() ? "STARTING" : "NO BLE";
+            setText(app.hasBle() ? "STARTING" : "NO BLE");
+            return;
         }
 
         try {
@@ -79,16 +109,83 @@ class EnvSensorView extends WatchUi.SimpleDataField {
             var active = selectActiveSlot(slots);
             if (active == null) {
                 // Still scanning, so the settings menu can list nearby devices.
-                label = APP_LABEL;
-                return "NO SENSORS " + ble.getScanStatus();
+                mLabel = APP_LABEL;
+                setText("NO SENSORS " + ble.getScanStatus());
+                return;
             }
-            label = active.displayName;
-            return formatSlot(active);
+            mLabel = active.displayName;
+            formatSlot(active);
         } catch (e) {
             // Never let a display problem crash the data field.
             System.println("RuuviSensor: compute error: " + e.getErrorMessage());
-            return "---";
+            setText("---");
         }
+    }
+
+    //! Draws the header at the top and the value in the largest font that
+    //! fits the remaining space, in the device's data field colours.
+    //! @param dc Device context
+    function onUpdate(dc as Graphics.Dc) as Void {
+        var bg = getBackgroundColor();
+        var fg = (bg == Graphics.COLOR_BLACK) ? Graphics.COLOR_WHITE : Graphics.COLOR_BLACK;
+        dc.setColor(fg, bg);
+        dc.clear();
+
+        var w = dc.getWidth();
+        var h = dc.getHeight();
+
+        // ---- Header ----
+        var labelFont = (h >= 120) ? Graphics.FONT_SMALL
+            : ((h >= 70) ? Graphics.FONT_TINY : Graphics.FONT_XTINY);
+        var labelH = dc.getFontHeight(labelFont);
+        dc.drawText(w / 2, 1, labelFont, mLabel, Graphics.TEXT_JUSTIFY_CENTER);
+
+        // ---- Value ----
+        var top = labelH + 1;
+        var avail = h - top;
+        var maxW = w - 6;
+        var unitFont = labelFont;
+        var unitW = (mUnit.length() > 0) ? dc.getTextWidthInPixels(" " + mUnit, unitFont) : 0;
+
+        var fonts = mNumeric ? NUMBER_FONTS : TEXT_FONTS;
+        var font = fonts[fonts.size() - 1];
+        for (var i = 0; i < fonts.size(); i++) {
+            var f = fonts[i];
+            // Fit the digit height, not the padded line height.
+            var fh = dc.getFontHeight(f) * GLYPH_RATIO;
+            if (fh <= avail && dc.getTextWidthInPixels(mValue, f) + unitW <= maxW) {
+                font = f;
+                break;
+            }
+        }
+
+        var valueW = dc.getTextWidthInPixels(mValue, font);
+        var x = (w - valueW - unitW) / 2;
+        var cy = top + avail / 2;
+        dc.drawText(x, cy, font, mValue, Graphics.TEXT_JUSTIFY_LEFT | Graphics.TEXT_JUSTIFY_VCENTER);
+        if (unitW > 0) {
+            // Unit sits on the value's baseline, like the native fields.
+            var valueBottom = cy + dc.getFontHeight(font) * GLYPH_RATIO / 2;
+            var unitTop = valueBottom - dc.getFontHeight(unitFont) * GLYPH_RATIO;
+            dc.drawText(x + valueW, unitTop.toNumber(), unitFont, " " + mUnit, Graphics.TEXT_JUSTIFY_LEFT);
+        }
+    }
+
+    //! Sets a text (non-numeric) value with no unit.
+    //! @param text Value text
+    private function setText(text as String) as Void {
+        mValue = text;
+        mUnit = "";
+        mNumeric = false;
+    }
+
+    //! Sets a numeric value drawn in a number font, with a unit beside it.
+    //! @param value Number text (digits, '.', '-')
+    //! @param unit  Unit text
+    private function setNumber(value as String, unit as String) as Void {
+        mValue = value;
+        mUnit = unit;
+        mNumeric = true;
     }
 
     //! Picks the device to display, advancing to the next enabled slot every
@@ -124,29 +221,32 @@ class EnvSensorView extends WatchUi.SimpleDataField {
         return null;
     }
 
-    //! Formats the value for one device (its name is in the header).
+    //! Prepares the value for one device (its name is in the header).
     //!   SCAN <status>   : searching / pairing, never connected since config;
     //!                     <status> is EnvSensorBleDelegate.getScanStatus()
     //!   ---             : link lost / broadcasts stopped
     //!   WAIT            : connected, first packet not received yet
-    //!   readings        : per the device's Show setting ("?" suffix when stale)
+    //!   readings        : per the device's Show setting ("?" after the unit
+    //!                     when stale)
     //! @param slot Device state
-    //! @return Display string
-    private function formatSlot(slot as EnvDeviceState) as String {
+    private function formatSlot(slot as EnvDeviceState) as Void {
         if (slot.state == EnvDeviceState.STATE_SCANNING) {
             var ble = mBle;
-            return "SCAN" + ((ble != null) ? (" " + ble.getScanStatus()) : "");
+            setText("SCAN" + ((ble != null) ? (" " + ble.getScanStatus()) : ""));
+            return;
         }
         if (slot.state != EnvDeviceState.STATE_CONNECTED) {
             // Unavailable (or any unexpected state): configured but no data.
-            return "---";
+            setText("---");
+            return;
         }
 
         var t = slot.temperature;
         var h = slot.humidity;
         var p = slot.pressure;
         if (t == null || h == null || p == null) {
-            return "WAIT";
+            setText("WAIT");
+            return;
         }
 
         // Convert to the configured units (sensor data is °C and hPa).
@@ -158,31 +258,26 @@ class EnvSensorView extends WatchUi.SimpleDataField {
         var presSuffix;
         if (presUnit == EnvSettings.PRESSURE_INHG) {
             presText = (p * 0.0295300).format("%.2f");
-            presSuffix = " inHg";
+            presSuffix = "inHg";
         } else if (presUnit == EnvSettings.PRESSURE_MMHG) {
             presText = (p * 0.750062).format("%.0f");
-            presSuffix = " mmHg";
+            presSuffix = "mmHg";
         } else {
             presText = p.format("%.0f");
-            presSuffix = " hPa";
+            presSuffix = "hPa";
         }
 
-        var text;
+        var stale = (System.getTimer() - slot.lastDataMs) > STALE_DATA_MS;
+        var mark = stale ? "?" : "";
+
         if (slot.show == EnvDeviceState.SHOW_TEMPERATURE) {
-            text = tempText + tempUnit;
+            setNumber(tempText, tempUnit + mark);
         } else if (slot.show == EnvDeviceState.SHOW_HUMIDITY) {
-            text = h.format("%.0f") + "%RH";
+            setNumber(h.format("%.0f"), "%RH" + mark);
         } else if (slot.show == EnvDeviceState.SHOW_PRESSURE) {
-            text = presText + presSuffix;
+            setNumber(presText, presSuffix + mark);
         } else {
-            text = "T:" + tempText
-                + " H:" + h.format("%.0f")
-                + " P:" + presText;
+            setText("T:" + tempText + " H:" + h.format("%.0f") + " P:" + presText + mark);
         }
-
-        if ((System.getTimer() - slot.lastDataMs) > STALE_DATA_MS) {
-            text += "?";
-        }
-        return text;
     }
 }
