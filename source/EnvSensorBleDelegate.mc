@@ -237,7 +237,8 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
             mProfileReady = false;
             mProfileFailed = false;
             mProfileAttempts = 0;
-            registerProfile();
+            // Registered lazily, when a device to connect to is first found
+            // (Ruuvi broadcasters never need it).
         }
 
         // ---- Update slots ----
@@ -269,11 +270,6 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
     //! Handles pairing / reconnect / request timeouts and connection cycling.
     function tick() as Void {
         var now = System.getTimer();
-
-        // ---- Profile not registered yet (e.g. UUIDs unset at start) ----
-        if (!mEnded && !mProfileRequested) {
-            registerProfile();
-        }
 
         // ---- onProfileRegister() never arrived: retry, then give up ----
         if (!mEnded && mProfileRequested && !mProfileReady && !mProfileFailed
@@ -392,7 +388,7 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
         // Scanning works without the profile, but pairing needs it.
         if (mProfileFailed) {
             text += " NO PROFILE";
-        } else if (!mProfileReady) {
+        } else if (mProfileRequested && !mProfileReady) {
             text += " setup";
         }
         return text;
@@ -553,17 +549,24 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
                 }
             }
 
+            var slotIdx = findSlotForResult(name, hasService, result);
+            if (slotIdx < 0) {
+                continue;
+            }
+
+            // A device to connect to: register the GATT profile now if that
+            // has not happened yet; pairing follows on a later advert.
+            if (!mProfileRequested && !mEnded) {
+                registerProfile();
+            }
+
             // No pairing while another pairing is in flight (one at a time
             // keeps the BLE stack happy), before the profile is registered,
             // or when no further connection is available.
             if (mPairingSlot >= 0 || !mProfileReady || !canPairMore()) {
                 continue;
             }
-
-            var slotIdx = findSlotForResult(name, hasService, result);
-            if (slotIdx >= 0) {
-                pairSlot(slotIdx, result);
-            }
+            pairSlot(slotIdx, result);
         }
     }
 

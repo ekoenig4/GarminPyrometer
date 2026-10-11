@@ -23,7 +23,7 @@ class EnvSensorView extends WatchUi.SimpleDataField {
     // Readings older than this are flagged with "?" (sensor went quiet).
     private const STALE_DATA_MS = 30000;
 
-    // BLE delegate (null if the product has no BLE support).
+    // BLE delegate, obtained from the app once BLE has started.
     private var mBle as EnvSensorBleDelegate?;
 
     // Index into the delegate's slot array of the device currently shown.
@@ -33,11 +33,9 @@ class EnvSensorView extends WatchUi.SimpleDataField {
     private var mLastRotateMs as Number = 0;
 
     //! Constructor.
-    //! @param bleDelegate Shared BLE delegate, or null if BLE is unavailable
-    function initialize(bleDelegate as EnvSensorBleDelegate?) {
+    function initialize() {
         SimpleDataField.initialize();
         label = "ENV DATA";
-        mBle = bleDelegate;
         mLastRotateMs = System.getTimer();
     }
 
@@ -46,9 +44,12 @@ class EnvSensorView extends WatchUi.SimpleDataField {
     //! @param info Activity info (unused; data comes from BLE)
     //! @return Formatted display string
     function compute(info as Activity.Info) {
-        var ble = mBle;
+        // BLE starts a few seconds after the field does (see EnvSensorApp).
+        var app = getApp();
+        var ble = app.ensureBle();
+        mBle = ble;
         if (ble == null) {
-            return "NO BLE";
+            return app.hasBle() ? "STARTING" : "NO BLE";
         }
 
         try {

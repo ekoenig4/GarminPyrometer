@@ -86,6 +86,7 @@ non-numeric or out of range are dropped and the last good values are kept.
 | `WAIT` | Connected, no data yet |
 | `T:… H:… P:…?` | Latest readings; `?` means no new data for 30 s |
 | `NO SENSORS <status>` | No device configured; still scanning (status as for `SCAN`) so the settings menu can list nearby devices |
+| `STARTING` | First 3 s after the field starts; Bluetooth is not touched yet |
 | `NO BLE` | Product has no Connect IQ BLE support |
 
 ## Notes

@@ -30,14 +30,23 @@ class EnvSensorApp extends Application.AppBase {
     // stays null in the settings menu and on products without BLE.
     private var mBleDelegate as EnvSensorBleDelegate?;
 
+    // BLE is started this long after the data field view is created. When
+    // the on-device settings menu closes, the Montana restarts the data
+    // field immediately; touching BLE before the previous instance has been
+    // cleaned up left the field stuck on its icon until a reboot.
+    private const BLE_START_DELAY_MS = 3000;
+
+    // System.getTimer() when getInitialView() ran (0 = not in data field mode).
+    private var mViewStartMs as Number = 0;
+
     //! Constructor.
     function initialize() {
         AppBase.initialize();
     }
 
     //! Called when the app starts, both as a data field and when the
-    //! on-device settings menu is opened. BLE is started from
-    //! getInitialView() so that the settings menu never uses it.
+    //! on-device settings menu is opened. BLE is started later, from the data
+    //! field's compute() via ensureBle(), so the settings menu never uses it.
     //! @param state Startup arguments (unused)
     function onStart(state as Dictionary?) as Void {
     }
@@ -55,8 +64,8 @@ class EnvSensorApp extends Application.AppBase {
     //! Returns the initial view for the data field.
     //! @return Array containing the EnvSensorView
     function getInitialView() {
-        startBle();
-        return [new EnvSensorView(mBleDelegate)];
+        mViewStartMs = System.getTimer();
+        return [new EnvSensorView()];
     }
 
     //! Called by the system when the user edits the settings in Garmin Connect
@@ -95,9 +104,25 @@ class EnvSensorApp extends Application.AppBase {
         WatchUi.requestUpdate();
     }
 
+    //! Returns the BLE delegate, starting BLE once BLE_START_DELAY_MS has
+    //! passed since the data field view was created. Called by the view on
+    //! every compute().
+    //! @return Delegate, or null while waiting / when BLE is unsupported
+    function ensureBle() as EnvSensorBleDelegate? {
+        if (mBleDelegate == null && mViewStartMs != 0
+                && (System.getTimer() - mViewStartMs) >= BLE_START_DELAY_MS) {
+            startBle();
+        }
+        return mBleDelegate;
+    }
+
+    //! @return true if this product supports Connect IQ BLE
+    function hasBle() as Boolean {
+        return (Toybox has :BluetoothLowEnergy);
+    }
+
     //! Creates and registers the BLE delegate, then applies the stored
-    //! settings (registers the GATT profile and starts scanning). Data field
-    //! mode only. Idempotent.
+    //! settings (starts scanning). Data field mode only. Idempotent.
     private function startBle() as Void {
         if (mBleDelegate != null) {
             return;
