@@ -27,7 +27,9 @@ The field shows the one sensor chosen under **Display** in the settings menu
 | `monkey.jungle` | Build file |
 | `source/RuuviSensorApp.mc` | Entry point; starts BLE (data field mode only), caches units |
 | `source/RuuviSensorView.mc` | Data field view, drawn like the native fields |
-| `source/RuuviScanner.mc` | BLE scanning and Ruuvi data format 5 decoding |
+| `source/RuuviScanner.mc` | BLE scanning; keeps readings and the nearby-tag list |
+| `source/RuuviDecode.mc` | Ruuvi data format 5 decoding |
+| `source/RuuviDecodeTests.mc` | Unit tests for the decoder (test builds only) |
 | `source/RuuviSettings.mc` | On-device settings menu (sensor list, units) |
 | `source/RuuviConfig.mc` | Sensor list storage, units, helpers |
 | `resources/properties/properties.xml` | Unit settings |
@@ -96,6 +98,20 @@ Manufacturer data (company `0x0499`) after the company id:
 ```
 monkeyc -d montana7xx -f monkey.jungle -o bin/RuuviSensor.prg -y <developer_key>
 ```
+
+## Testing
+
+The decoder's unit tests use the test vectors from Ruuvi's data format 5
+specification. Build with `-t` and run them in the simulator:
+
+```
+monkeyc -d montana7xx -f monkey.jungle -t -o bin/RuuviSensorTest.prg -y <developer_key>
+connectiq &
+monkeydo bin/RuuviSensorTest.prg montana7xx -t
+```
+
+The test build is for the simulator only: never copy `RuuviSensorTest.prg`
+to the device (every `.prg` in `GARMIN/APPS` shows up as its own app).
 
 monkeyc 9.2 names string constants from their letters/digits plus Java
 `hashCode()`, so two punctuation-only literals with the same hash (e.g. `", "`
