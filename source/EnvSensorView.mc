@@ -40,8 +40,10 @@ class EnvSensorView extends WatchUi.DataField {
 
     // Value fonts, largest first. Number fonts only contain digits and a few
     // symbols, so they are used for plain numbers only.
+    // FONT_NUMBER_THAI_HOT is left out: on the Montana it dwarfs the
+    // native fields.
     private const NUMBER_FONTS = [
-        Graphics.FONT_NUMBER_THAI_HOT, Graphics.FONT_NUMBER_HOT,
+        Graphics.FONT_NUMBER_HOT,
         Graphics.FONT_NUMBER_MEDIUM, Graphics.FONT_NUMBER_MILD,
         Graphics.FONT_LARGE, Graphics.FONT_MEDIUM, Graphics.FONT_SMALL,
         Graphics.FONT_TINY, Graphics.FONT_XTINY
@@ -135,8 +137,8 @@ class EnvSensorView extends WatchUi.DataField {
         var h = dc.getHeight();
 
         // ---- Header ----
-        var labelFont = (h >= 120) ? Graphics.FONT_SMALL
-            : ((h >= 70) ? Graphics.FONT_TINY : Graphics.FONT_XTINY);
+        var labelFont = (h >= 120) ? Graphics.FONT_MEDIUM
+            : ((h >= 70) ? Graphics.FONT_SMALL : Graphics.FONT_TINY);
         var labelH = dc.getFontHeight(labelFont);
         dc.drawText(w / 2, 1, labelFont, mLabel, Graphics.TEXT_JUSTIFY_CENTER);
 
@@ -144,16 +146,17 @@ class EnvSensorView extends WatchUi.DataField {
         var top = labelH + 1;
         var avail = h - top;
         var maxW = w - 6;
-        var unitFont = labelFont;
+        // Unit one size up from the header so it stays readable.
+        var unitFont = (labelFont == Graphics.FONT_MEDIUM) ? Graphics.FONT_LARGE
+            : ((labelFont == Graphics.FONT_SMALL) ? Graphics.FONT_MEDIUM : Graphics.FONT_SMALL);
         var unitW = (mUnit.length() > 0) ? dc.getTextWidthInPixels(" " + mUnit, unitFont) : 0;
 
         var fonts = mNumeric ? NUMBER_FONTS : TEXT_FONTS;
         var font = fonts[fonts.size() - 1];
         for (var i = 0; i < fonts.size(); i++) {
             var f = fonts[i];
-            // Fit the digit height, not the padded line height.
-            var fh = dc.getFontHeight(f) * GLYPH_RATIO;
-            if (fh <= avail && dc.getTextWidthInPixels(mValue, f) + unitW <= maxW) {
+            // Fit the full line height so the number is not oversized.
+            if (dc.getFontHeight(f) <= avail && dc.getTextWidthInPixels(mValue, f) + unitW <= maxW) {
                 font = f;
                 break;
             }
