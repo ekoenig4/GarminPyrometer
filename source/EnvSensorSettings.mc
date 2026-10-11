@@ -250,7 +250,10 @@ class EnvPickerMenu extends WatchUi.Menu2 {
         var hasService = (fields[2] == true);
         var age = now - (fields[3] as Number);
 
-        var sub = rssi + " dBm" + (hasService ? " sensor" : "") + ", " + formatAge(age);
+        // Note: avoid punctuation-only literals such as ", " here. monkeyc
+        // 9.2 labels strings by their alphanumerics plus Java hashCode(), and
+        // ", " collides with "+?" (both hash to 1396), which aborts the build.
+        var sub = rssi + (hasService ? " dBm sensor, " : " dBm, ") + formatAge(age);
         if (name.length() == 0) {
             addItem(new WatchUi.MenuItem("(unnamed sensor)", sub, :auto, null));
         } else {
