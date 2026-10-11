@@ -2,7 +2,8 @@
     Application properties (persistent user settings).
 
     DeviceNBleId        : advertised BLE local name matched during scanning.
-                          An empty value disables the slot.
+                          An empty value disables the slot. "*" connects to
+                          any sensor that advertises the service UUID.
     DeviceNDisplayName  : label rendered on the data field for that device.
     CustomServiceUuid   : optional override of the Nordic UART Service UUID
                           (6E400001-B5A3-F393-E0A9-E50E24DCCA9E).
@@ -10,7 +11,7 @@
                           characteristic UUID (6E400003-B5A3-F393-E0A9-E50E24DCCA9E).
 -->
 <properties>
-    <property id="Device1BleId" type="string">EnvSensor_01</property>
+    <property id="Device1BleId" type="string">*</property>
     <property id="Device1DisplayName" type="string">Balloon 1</property>
 
     <property id="Device2BleId" type="string"></property>

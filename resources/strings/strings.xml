@@ -13,7 +13,7 @@
     <string id="CustomCharUuidTitle">Custom data characteristic UUID (blank = Nordic UART TX)</string>
 
     <!-- Settings panel help text -->
-    <string id="BleIdPrompt">Advertised BLE device name. Leave blank to disable this slot.</string>
+    <string id="BleIdPrompt">Advertised BLE device name. * = any sensor advertising the service UUID. Blank disables this slot.</string>
     <string id="DisplayNamePrompt">Label shown on screen for this device.</string>
     <string id="UuidPrompt">Format: XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX</string>
 </strings>

@@ -9,6 +9,8 @@
 //     delegate as a plain configuration dictionary.
 //   * Re-apply settings at runtime from onSettingsChanged() so devices can be
 //     added, removed or renamed mid-activity without restarting the app.
+//   * Provide the on-device settings menu (getSettingsView()), which is the
+//     only way to configure the field when it was side-loaded over USB.
 //
 import Toybox.Application;
 import Toybox.Lang;
@@ -23,6 +25,9 @@ class EnvSensorApp extends Application.AppBase {
 
     // BLE delegate; null when the product has no BLE support.
     private var mBleDelegate as EnvSensorBleDelegate?;
+
+    // True once the delegate is registered with the BLE subsystem.
+    private var mBleStarted as Boolean = false;
 
     //! Constructor. The BLE delegate is created here (rather than in onStart)
     //! so it exists before getInitialView() builds the view.
@@ -40,15 +45,7 @@ class EnvSensorApp extends Application.AppBase {
     //! the stored settings, which registers the GATT profile and starts scanning.
     //! @param state Startup arguments (unused)
     function onStart(state as Dictionary?) as Void {
-        var delegate = mBleDelegate;
-        if (delegate != null) {
-            try {
-                Ble.setDelegate(delegate);
-                delegate.applyConfig(readConfig());
-            } catch (e) {
-                System.println("EnvSensor: BLE start failed: " + e.getErrorMessage());
-            }
-        }
+        startBle();
     }
 
     //! Called when the data field is removed or the activity ends.
@@ -72,7 +69,30 @@ class EnvSensorApp extends Application.AppBase {
     //! property and pushes the new scan filter list / UUIDs to the delegate.
     function onSettingsChanged() as Void {
         System.println("EnvSensor: settings changed");
+        applySettings();
+    }
 
+    //! Returns the on-device settings menu. On the device this is reached from
+    //! the Connect IQ / data field menu ("Settings" under EnvSensor BLE). It is
+    //! the only way to configure a side-loaded (USB) install, because Garmin
+    //! Connect shows app settings only for store installs.
+    //! @return [Menu2, Menu2InputDelegate]
+    function getSettingsView() {
+        startBle();
+        var delegate = mBleDelegate;
+        if (delegate != null) {
+            // Scan for nearby sensors while the menu is open so the
+            // "Choose sensor" list is populated by the time it is opened.
+            delegate.setDiscovery(true);
+        }
+        return [new EnvSettingsMenu(), new EnvSettingsMenuDelegate()];
+    }
+
+    //! Re-reads all properties and pushes them to the BLE delegate. Called
+    //! from onSettingsChanged() and by the on-device settings menu after it
+    //! writes a property (Properties.setValue() does not fire
+    //! onSettingsChanged()).
+    function applySettings() as Void {
         var delegate = mBleDelegate;
         if (delegate != null) {
             try {
@@ -84,6 +104,27 @@ class EnvSensorApp extends Application.AppBase {
 
         // Ask the view to redraw with the new labels as soon as possible.
         WatchUi.requestUpdate();
+    }
+
+    //! @return The BLE delegate, or null if BLE is unsupported
+    function getBleDelegate() as EnvSensorBleDelegate? {
+        return mBleDelegate;
+    }
+
+    //! Registers the BLE delegate and applies the stored settings, which
+    //! registers the GATT profile and starts scanning. Idempotent.
+    private function startBle() as Void {
+        var delegate = mBleDelegate;
+        if (delegate == null || mBleStarted) {
+            return;
+        }
+        try {
+            Ble.setDelegate(delegate);
+            mBleStarted = true;
+            delegate.applyConfig(readConfig());
+        } catch (e) {
+            System.println("EnvSensor: BLE start failed: " + e.getErrorMessage());
+        }
     }
 
     //! Reads all user settings into a plain configuration dictionary:

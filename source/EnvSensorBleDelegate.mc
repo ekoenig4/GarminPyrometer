@@ -88,11 +88,16 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
     public static const DEFAULT_SERVICE_UUID = "6E400001-B5A3-F393-E0A9-E50E24DCCA9E";
     public static const DEFAULT_TX_CHAR_UUID = "6E400003-B5A3-F393-E0A9-E50E24DCCA9E";
 
+    // BLE id meaning "any sensor that advertises the service UUID".
+    public static const WILDCARD_ID = "*";
+
     // Timing (milliseconds).
     private const PAIR_TIMEOUT_MS      = 20000;   // pairDevice() -> connected
     private const RECONNECT_TIMEOUT_MS = 30000;   // system auto-reconnect window
     private const REQUEST_TIMEOUT_MS   = 5000;    // outstanding GATT request
     private const CYCLE_INTERVAL_MS    = 60000;   // min connected time before rotation
+    private const SEEN_EXPIRY_MS       = 30000;   // drop nearby-device entries after this
+    private const SEEN_MAX             = 20;      // cap on remembered nearby devices
 
     // CCCD value enabling notifications.
     private const CCCD_ENABLE_NOTIFY = [0x01, 0x00]b;
@@ -123,6 +128,11 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
     private var mScanning as Boolean = false;
     private var mPairingSlot as Number = -1;   // slot index with pairDevice() in flight
 
+    // Discovery mode (on-device settings): scan without pairing and remember
+    // nearby advertisers. Name => [rssi, lastSeenMs, advertisesService].
+    private var mDiscovery as Boolean = false;
+    private var mSeen as Dictionary<String, Array>;
+
     // Serialized GATT request queue (slot indices awaiting a CCCD write).
     private var mNotifyQueue as Array<Number>;
     private var mRequestSlot as Number = -1;   // slot with a request in flight
@@ -139,6 +149,7 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
         mStateByName = {} as Dictionary<String, EnvDeviceState>;
         mRegisteredProfiles = [] as Array<String>;
         mNotifyQueue = [] as Array<Number>;
+        mSeen = {} as Dictionary<String, Array>;
     }
 
     // ---------------------------------------------------------------------
@@ -251,6 +262,42 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
         setScanning(false);
     }
 
+    //! Turns discovery mode on/off. While on, the delegate scans continuously,
+    //! records every named advertiser (see getNearbyDevices()) and does not
+    //! pair with anything, so the settings menu can offer a device list.
+    //! @param on true to enable discovery
+    function setDiscovery(on as Boolean) as Void {
+        mDiscovery = on;
+        if (on) {
+            mSeen = {} as Dictionary<String, Array>;
+        }
+        updateScanState();
+    }
+
+    //! Returns nearby named advertisers seen in the last SEEN_EXPIRY_MS,
+    //! strongest signal first. Each entry is
+    //! { :name => String, :rssi => Number, :hasService => Boolean }.
+    //! @return Array of dictionaries
+    function getNearbyDevices() as Array<Dictionary> {
+        var now = System.getTimer();
+        var out = [] as Array<Dictionary>;
+        var keys = mSeen.keys();
+        for (var i = 0; i < keys.size(); i++) {
+            var entry = mSeen[keys[i]];
+            if (entry == null || (now - (entry[1] as Number)) > SEEN_EXPIRY_MS) {
+                continue;
+            }
+            var item = { :name => keys[i], :rssi => entry[0], :hasService => entry[2] };
+            // Insertion sort by RSSI (descending); lists are tiny.
+            var pos = out.size();
+            while (pos > 0 && ((out[pos - 1][:rssi] as Number) < (entry[0] as Number))) {
+                pos--;
+            }
+            out = out.slice(0, pos).addAll([item]).addAll(out.slice(pos, null));
+        }
+        return out;
+    }
+
     //! @return Array of all slot state objects (view must treat as read-only)
     function getSlots() as Array<EnvDeviceState> {
         return mSlots;
@@ -298,24 +345,30 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
     //! is compared (case-insensitively) against every enabled, unpaired slot.
     //! @param scanResults Iterator of Ble.ScanResult
     function onScanResults(scanResults as Ble.Iterator) as Void {
-        // Only one pairing at a time keeps the BLE stack happy.
-        if (mPairingSlot >= 0 || !mProfileReady) {
-            return;
-        }
-
         for (var result = scanResults.next(); result != null; result = scanResults.next()) {
             if (!(result instanceof Ble.ScanResult)) {
                 continue;
             }
             var name = result.getDeviceName();
-            if (name == null || name.length() == 0) {
+            if (name != null && name.length() == 0) {
+                name = null;
+            }
+            var hasService = advertisesService(result);
+
+            if (name != null) {
+                recordSeen(name, result.getRssi(), hasService);
+            }
+
+            // No pairing in discovery mode, while another pairing is in
+            // flight (one at a time keeps the BLE stack happy), or before
+            // the GATT profile is registered.
+            if (mDiscovery || mPairingSlot >= 0 || !mProfileReady) {
                 continue;
             }
 
-            var slotIdx = findSlotForName(name, result);
+            var slotIdx = findSlotForResult(name, hasService, result);
             if (slotIdx >= 0) {
                 pairSlot(slotIdx, result);
-                return;
             }
         }
     }
@@ -659,14 +712,19 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
         mNotifyQueue = kept;
     }
 
-    //! Finds the first enabled, unpaired slot whose BLE id matches the
-    //! advertised name. Devices already paired to a slot are ignored.
-    //! @param name   Advertised local name
-    //! @param result Scan result (used to detect already-paired devices)
+    //! Finds the slot a scan result should be paired to:
+    //!   1. an enabled, unpaired slot whose BLE id equals the advertised name
+    //!      (case-insensitive), otherwise
+    //!   2. an unpaired wildcard ("*") slot, if the device advertises the
+    //!      active service UUID.
+    //! Devices already paired to a slot, and slots cooling down after being
+    //! cycled out, are skipped.
+    //! @param name       Advertised local name (may be null)
+    //! @param hasService true if the advert lists the active service UUID
+    //! @param result     Scan result (used to detect already-paired devices)
     //! @return Slot index, or -1 if none matches
-    private function findSlotForName(name as String, result as Ble.ScanResult) as Number {
-        var upper = name.toUpper();
-
+    private function findSlotForResult(name as String?, hasService as Boolean,
+            result as Ble.ScanResult) as Number {
         // Skip devices that already belong to a slot.
         for (var i = 0; i < mSlots.size(); i++) {
             var sr = mSlots[i].scanResult;
@@ -675,14 +733,55 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
             }
         }
 
+        var now = System.getTimer();
+        var upper = (name != null) ? name.toUpper() : null;
+        var wildcard = -1;
+
         for (var i = 0; i < mSlots.size(); i++) {
             var slot = mSlots[i];
-            if (slot.isEnabled() && slot.device == null && slot.bleId.toUpper().equals(upper)
-                    && System.getTimer() >= slot.cooldownUntilMs) {
+            if (!slot.isEnabled() || slot.device != null || now < slot.cooldownUntilMs) {
+                continue;
+            }
+            if (slot.bleId.equals(WILDCARD_ID)) {
+                if (wildcard < 0 && hasService) {
+                    wildcard = i;
+                }
+            } else if (upper != null && slot.bleId.toUpper().equals(upper)) {
                 return i;
             }
         }
-        return -1;
+        return wildcard;
+    }
+
+    //! @param result Scan result
+    //! @return true if the advert lists the active service UUID
+    private function advertisesService(result as Ble.ScanResult) as Boolean {
+        var svc = mServiceUuid;
+        if (svc == null) {
+            return false;
+        }
+        try {
+            var uuids = result.getServiceUuids();
+            for (var u = uuids.next(); u != null; u = uuids.next()) {
+                if (svc.equals(u)) {
+                    return true;
+                }
+            }
+        } catch (e) {
+            // Malformed advert; treat as "not advertised".
+        }
+        return false;
+    }
+
+    //! Remembers a nearby advertiser for the settings device list.
+    //! @param name       Advertised name
+    //! @param rssi       Signal strength (dBm)
+    //! @param hasService true if it advertises the active service UUID
+    private function recordSeen(name as String, rssi as Number?, hasService as Boolean) as Void {
+        if (!mSeen.hasKey(name) && mSeen.size() >= SEEN_MAX) {
+            return;
+        }
+        mSeen[name] = [(rssi != null) ? rssi : -127, System.getTimer(), hasService];
     }
 
     //! Finds the slot that owns a paired device.
@@ -755,10 +854,12 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
         }
     }
 
-    //! Starts scanning when a profile is ready, a slot is waiting, nothing is
-    //! being paired and a connection is free; stops it otherwise (saves power).
+    //! Starts scanning when nothing is being paired and either discovery mode
+    //! is on, or a profile is ready, a slot is waiting and a connection is
+    //! free; stops it otherwise (saves power).
     private function updateScanState() as Void {
-        var want = mProfileReady && mPairingSlot < 0 && hasUnpairedSlot() && freeConnections() > 0;
+        var want = mPairingSlot < 0
+            && (mDiscovery || (mProfileReady && hasUnpairedSlot() && freeConnections() > 0));
         setScanning(want);
     }
 
