@@ -1,0 +1,14 @@
+<strings>
+    <!-- Application name -->
+    <string id="AppName">RuuviSensor</string>
+
+    <!-- Settings panel (units) -->
+    <string id="TempUnitTitle">Temperature unit</string>
+    <string id="TempUnitDevice">Device setting</string>
+    <string id="TempUnitC">Celsius (°C)</string>
+    <string id="TempUnitF">Fahrenheit (°F)</string>
+    <string id="PressureUnitTitle">Pressure unit</string>
+    <string id="PressureUnitHpa">hPa (mbar)</string>
+    <string id="PressureUnitInHg">inHg</string>
+    <string id="PressureUnitMmHg">mmHg</string>
+</strings>

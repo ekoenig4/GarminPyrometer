@@ -1,0 +1,15 @@
+<!--
+    Application properties (persistent user settings).
+
+    The sensor list has a variable length, so it is kept in
+    Application.Storage and edited from the on-device settings menu; only the
+    display units live here (they can also be set from Garmin Connect for
+    store installs).
+
+    TempUnit      : 0 = follow the device's unit setting, 1 = °C, 2 = °F
+    PressureUnit  : 0 = hPa, 1 = inHg, 2 = mmHg
+-->
+<properties>
+    <property id="TempUnit" type="number">0</property>
+    <property id="PressureUnit" type="number">0</property>
+</properties>

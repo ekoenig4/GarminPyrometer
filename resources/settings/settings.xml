@@ -1,0 +1,21 @@
+<!--
+    Settings panel shown in Garmin Connect / Garmin Express (store installs).
+    The sensor list is managed from the on-device settings menu, because this
+    panel cannot hold a variable-length list.
+-->
+<settings>
+    <setting propertyKey="@Properties.TempUnit" title="@Strings.TempUnitTitle">
+        <settingConfig type="list">
+            <listEntry value="0">@Strings.TempUnitDevice</listEntry>
+            <listEntry value="1">@Strings.TempUnitC</listEntry>
+            <listEntry value="2">@Strings.TempUnitF</listEntry>
+        </settingConfig>
+    </setting>
+    <setting propertyKey="@Properties.PressureUnit" title="@Strings.PressureUnitTitle">
+        <settingConfig type="list">
+            <listEntry value="0">@Strings.PressureUnitHpa</listEntry>
+            <listEntry value="1">@Strings.PressureUnitInHg</listEntry>
+            <listEntry value="2">@Strings.PressureUnitMmHg</listEntry>
+        </settingConfig>
+    </setting>
+</settings>
