@@ -5,13 +5,15 @@
 // apps installed from the Connect IQ store, so a side-loaded (USB) install is
 // configured here instead. Menu tree:
 //
-//   EnvSensor
+//   RuuviSensor
 //   +-- Device 1 / 2 / 3
-//       +-- Choose sensor    -> nearby BLE devices last heard by the data field
-//       +-- Auto connect     -> "*": any sensor advertising the service UUID
-//       +-- Show             -> All / Temperature / Humidity / Pressure
-//       +-- Rename           -> on-screen keyboard (if the product has one)
-//       +-- Turn off         -> clears the slot
+//   |   +-- Choose sensor    -> nearby BLE devices last heard by the data field
+//   |   +-- Auto connect     -> "*": any sensor advertising the service UUID
+//   |   +-- Show             -> All / Temperature / Humidity / Pressure
+//   |   +-- Rename           -> on-screen keyboard (if the product has one)
+//   |   +-- Turn off         -> clears the slot
+//   +-- Temperature unit     -> Device setting / °C / °F
+//   +-- Pressure unit        -> hPa / inHg / mmHg
 //
 // Every change is written with Application.Properties.setValue().
 //
@@ -28,6 +30,68 @@ import Toybox.WatchUi;
 
 //! Property helpers shared by the settings menus.
 module EnvSettings {
+
+    // Global display units (properties TempUnit / PressureUnit).
+    const TEMP_UNIT_KEY = "TempUnit";
+    const TEMP_DEVICE = 0;        // follow the device's own unit setting
+    const TEMP_C = 1;
+    const TEMP_F = 2;
+    const TEMP_UNIT_LABELS = ["Device setting", "°C", "°F"];
+
+    const PRESSURE_UNIT_KEY = "PressureUnit";
+    const PRESSURE_HPA = 0;
+    const PRESSURE_INHG = 1;
+    const PRESSURE_MMHG = 2;
+    const PRESSURE_UNIT_LABELS = ["hPa", "inHg", "mmHg"];
+
+    //! Reads a number property.
+    //! @param key      Property id
+    //! @param fallback Value when missing or not a number
+    //! @return Stored value or fallback
+    function getNumber(key as String, fallback as Number) as Number {
+        try {
+            var value = Application.Properties.getValue(key);
+            if (value instanceof Number) {
+                return value as Number;
+            }
+        } catch (e) {
+            System.println("RuuviSensor: missing property " + key);
+        }
+        return fallback;
+    }
+
+    //! Writes a number property and re-applies the configuration.
+    //! @param key   Property id
+    //! @param value New value
+    function setNumber(key as String, value as Number) as Void {
+        try {
+            Application.Properties.setValue(key, value);
+        } catch (e) {
+            System.println("RuuviSensor: cannot save " + key + ": " + e.getErrorMessage());
+        }
+        getApp().applySettings();
+    }
+
+    //! @return true if temperatures should be shown in °F, taking "Device
+    //! setting" from the device's own temperature unit setting
+    function useFahrenheit() as Boolean {
+        var unit = getNumber(TEMP_UNIT_KEY, TEMP_DEVICE);
+        if (unit == TEMP_F) {
+            return true;
+        }
+        if (unit == TEMP_C) {
+            return false;
+        }
+        var ds = System.getDeviceSettings();
+        return (ds has :temperatureUnits) && ds.temperatureUnits == System.UNIT_STATUTE;
+    }
+
+    //! @param labels Choice labels
+    //! @param index  Stored choice
+    //! @return Label for the choice (first label if out of range)
+    function choiceLabel(labels as Array<String>, index as Number) as String {
+        return (index >= 0 && index < labels.size()) ? labels[index] : labels[0];
+    }
 
     //! @param slot Slot index (0-based)
     //! @return Stored BLE id for the slot ("" if unset)
@@ -155,12 +219,20 @@ module EnvSettings {
 
 class EnvSettingsMenu extends WatchUi.Menu2 {
 
-    //! Builds the main menu with one item per device slot.
+    //! Builds the main menu: one item per device slot, then the units.
     function initialize() {
         Menu2.initialize({ :title => "RuuviSensor" });
         for (var i = 0; i < EnvSensorApp.MAX_DEVICES; i++) {
             addItem(new WatchUi.MenuItem("Device " + (i + 1), EnvSettings.describeSlot(i), i, null));
         }
+        addItem(new WatchUi.MenuItem("Temperature unit",
+            EnvSettings.choiceLabel(EnvSettings.TEMP_UNIT_LABELS,
+                EnvSettings.getNumber(EnvSettings.TEMP_UNIT_KEY, EnvSettings.TEMP_DEVICE)),
+            :tempUnit, null));
+        addItem(new WatchUi.MenuItem("Pressure unit",
+            EnvSettings.choiceLabel(EnvSettings.PRESSURE_UNIT_LABELS,
+                EnvSettings.getNumber(EnvSettings.PRESSURE_UNIT_KEY, EnvSettings.PRESSURE_HPA)),
+            :pressureUnit, null));
     }
 }
 
@@ -170,11 +242,30 @@ class EnvSettingsMenuDelegate extends WatchUi.Menu2InputDelegate {
         Menu2InputDelegate.initialize();
     }
 
-    //! Opens the sub-menu for the selected device slot.
-    //! @param item Selected menu item (id = slot index)
+    //! Opens the sub-menu for the selected device slot or unit.
+    //! @param item Selected menu item (id = slot index, :tempUnit or :pressureUnit)
     function onSelect(item as WatchUi.MenuItem) as Void {
-        var slot = item.getId() as Number;
+        var id = item.getId();
+        if (id == :tempUnit) {
+            pushChoice("Temperature unit", EnvSettings.TEMP_UNIT_KEY, EnvSettings.TEMP_UNIT_LABELS,
+                EnvSettings.TEMP_DEVICE, item);
+            return;
+        }
+        if (id == :pressureUnit) {
+            pushChoice("Pressure unit", EnvSettings.PRESSURE_UNIT_KEY, EnvSettings.PRESSURE_UNIT_LABELS,
+                EnvSettings.PRESSURE_HPA, item);
+            return;
+        }
+        var slot = id as Number;
         WatchUi.pushView(new EnvDeviceMenu(slot), new EnvDeviceMenuDelegate(slot, item), WatchUi.SLIDE_LEFT);
+    }
+
+    //! Opens a single-choice menu for a number property.
+    private function pushChoice(title as String, key as String, labels as Array<String>,
+            fallback as Number, item as WatchUi.MenuItem) as Void {
+        var current = EnvSettings.getNumber(key, fallback);
+        WatchUi.pushView(new EnvChoiceMenu(title, labels, current),
+            new EnvChoiceMenuDelegate(key, labels, item), WatchUi.SLIDE_LEFT);
     }
 
 }
@@ -235,6 +326,49 @@ class EnvDeviceMenuDelegate extends WatchUi.Menu2InputDelegate {
     //! Refreshes the main menu entry and returns to it.
     private function finish() as Void {
         mParentItem.setSubLabel(EnvSettings.describeSlot(mSlot));
+        WatchUi.popView(WatchUi.SLIDE_RIGHT);
+    }
+}
+
+// -------------------------------------------------------------------------
+// Choice menu: pick one of several labels for a number property (units)
+// -------------------------------------------------------------------------
+
+class EnvChoiceMenu extends WatchUi.Menu2 {
+
+    //! @param title   Menu title
+    //! @param labels  Choice labels; the item id is the label's index
+    //! @param current Stored choice (marked "Selected")
+    function initialize(title as String, labels as Array<String>, current as Number) {
+        Menu2.initialize({ :title => title });
+        for (var i = 0; i < labels.size(); i++) {
+            addItem(new WatchUi.MenuItem(labels[i], (i == current) ? "Selected" : null, i, null));
+        }
+    }
+}
+
+class EnvChoiceMenuDelegate extends WatchUi.Menu2InputDelegate {
+
+    private var mKey as String;
+    private var mLabels as Array<String>;
+    private var mParentItem as WatchUi.MenuItem;   // main-menu item to refresh
+
+    //! @param key        Property id to write
+    //! @param labels     Choice labels
+    //! @param parentItem Main-menu item showing the current choice
+    function initialize(key as String, labels as Array<String>, parentItem as WatchUi.MenuItem) {
+        Menu2InputDelegate.initialize();
+        mKey = key;
+        mLabels = labels;
+        mParentItem = parentItem;
+    }
+
+    //! Stores the chosen index and returns to the main menu.
+    //! @param item Selected item (id = choice index)
+    function onSelect(item as WatchUi.MenuItem) as Void {
+        var index = item.getId() as Number;
+        EnvSettings.setNumber(mKey, index);
+        mParentItem.setSubLabel(EnvSettings.choiceLabel(mLabels, index));
         WatchUi.popView(WatchUi.SLIDE_RIGHT);
     }
 }

@@ -53,6 +53,22 @@
         </settingConfig>
     </setting>
 
+    <!-- Display units -->
+    <setting propertyKey="@Properties.TempUnit" title="@Strings.TempUnitTitle">
+        <settingConfig type="list">
+            <listEntry value="0">@Strings.TempUnitDevice</listEntry>
+            <listEntry value="1">@Strings.TempUnitC</listEntry>
+            <listEntry value="2">@Strings.TempUnitF</listEntry>
+        </settingConfig>
+    </setting>
+    <setting propertyKey="@Properties.PressureUnit" title="@Strings.PressureUnitTitle">
+        <settingConfig type="list">
+            <listEntry value="0">@Strings.PressureUnitHpa</listEntry>
+            <listEntry value="1">@Strings.PressureUnitInHg</listEntry>
+            <listEntry value="2">@Strings.PressureUnitMmHg</listEntry>
+        </settingConfig>
+    </setting>
+
     <!-- Alternative sensor brands -->
     <setting propertyKey="@Properties.CustomServiceUuid" title="@Strings.CustomServiceUuidTitle" prompt="@Strings.UuidPrompt">
         <settingConfig type="alphaNumeric"/>

@@ -16,6 +16,14 @@
     <string id="ShowTemperature">Temperature</string>
     <string id="ShowHumidity">Humidity</string>
     <string id="ShowPressure">Pressure</string>
+    <string id="TempUnitTitle">Temperature unit</string>
+    <string id="TempUnitDevice">Device setting</string>
+    <string id="TempUnitC">Celsius (°C)</string>
+    <string id="TempUnitF">Fahrenheit (°F)</string>
+    <string id="PressureUnitTitle">Pressure unit</string>
+    <string id="PressureUnitHpa">hPa (mbar)</string>
+    <string id="PressureUnitInHg">inHg</string>
+    <string id="PressureUnitMmHg">mmHg</string>
     <string id="CustomServiceUuidTitle">Custom service UUID (blank = Nordic UART)</string>
     <string id="CustomCharUuidTitle">Custom data characteristic UUID (blank = Nordic UART TX)</string>
 

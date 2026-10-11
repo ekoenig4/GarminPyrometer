@@ -49,6 +49,10 @@ Settings**, then for each device:
   on-screen keyboard).
 - **Turn off** — disables the slot.
 
+Below the devices, **Temperature unit** (Device setting / °C / °F) and
+**Pressure unit** (hPa / inHg / mmHg) apply to every device. *Device setting*
+follows the Montana's own unit setting.
+
 **Known Montana issue:** after the on-device settings menu closes, the
 firmware does not restart the data field: it shows the app icon, and the
 settings menu will not open again. Re-add the data field (pick
@@ -66,6 +70,8 @@ this problem.
 | `Device1BleId` … `Device3BleId` | Advertised BLE name to match (case-insensitive). `*` = any sensor advertising the service UUID. Blank disables the slot. |
 | `Device1DisplayName` … `Device3DisplayName` | Label shown as the field's header. |
 | `Device1Show` … `Device3Show` | Quantity shown: 0 = all, 1 = temperature, 2 = humidity, 3 = pressure. |
+| `TempUnit` | 0 = follow the device's unit setting, 1 = °C, 2 = °F. |
+| `PressureUnit` | 0 = hPa, 1 = inHg, 2 = mmHg. |
 | `CustomServiceUuid` | Optional service UUID; blank = Nordic UART `6E400001-B5A3-F393-E0A9-E50E24DCCA9E`. |
 | `CustomCharUuid` | Optional data characteristic UUID; blank = Nordic UART TX `6E400003-B5A3-F393-E0A9-E50E24DCCA9E`. |
 

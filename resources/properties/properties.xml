@@ -25,6 +25,11 @@
     <property id="Device3DisplayName" type="string">Balloon 3</property>
     <property id="Device3Show" type="number">0</property>
 
+    <!-- Display units: TempUnit 0 = device setting, 1 = C, 2 = F;
+         PressureUnit 0 = hPa, 1 = inHg, 2 = mmHg. -->
+    <property id="TempUnit" type="number">0</property>
+    <property id="PressureUnit" type="number">0</property>
+
     <property id="CustomServiceUuid" type="string"></property>
     <property id="CustomCharUuid" type="string"></property>
 </properties>

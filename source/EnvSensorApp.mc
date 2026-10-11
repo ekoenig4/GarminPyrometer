@@ -39,6 +39,10 @@ class EnvSensorApp extends Application.AppBase {
     // System.getTimer() when getInitialView() ran (0 = not in data field mode).
     private var mViewStartMs as Number = 0;
 
+    // Display units, cached from the settings (see loadUnits()).
+    private var mFahrenheit as Boolean = false;
+    private var mPressureUnit as Number = 0;   // EnvSettings.PRESSURE_*
+
     //! Constructor.
     function initialize() {
         AppBase.initialize();
@@ -65,6 +69,7 @@ class EnvSensorApp extends Application.AppBase {
     //! @return Array containing the EnvSensorView
     function getInitialView() {
         mViewStartMs = System.getTimer();
+        loadUnits();
         return [new EnvSensorView()];
     }
 
@@ -91,6 +96,7 @@ class EnvSensorApp extends Application.AppBase {
     //! writes a property. In the settings menu there is no delegate, so this
     //! only requests a redraw.
     function applySettings() as Void {
+        loadUnits();
         var delegate = mBleDelegate;
         if (delegate != null) {
             try {
@@ -114,6 +120,23 @@ class EnvSensorApp extends Application.AppBase {
             startBle();
         }
         return mBleDelegate;
+    }
+
+    //! Caches the display units so compute() does not read properties every
+    //! second.
+    private function loadUnits() as Void {
+        mFahrenheit = EnvSettings.useFahrenheit();
+        mPressureUnit = EnvSettings.getNumber(EnvSettings.PRESSURE_UNIT_KEY, EnvSettings.PRESSURE_HPA);
+    }
+
+    //! @return true to show temperatures in °F
+    function useFahrenheit() as Boolean {
+        return mFahrenheit;
+    }
+
+    //! @return Pressure unit (EnvSettings.PRESSURE_*)
+    function getPressureUnit() as Number {
+        return mPressureUnit;
     }
 
     //! @return true if this product supports Connect IQ BLE

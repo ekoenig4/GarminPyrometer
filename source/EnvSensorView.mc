@@ -149,17 +149,35 @@ class EnvSensorView extends WatchUi.SimpleDataField {
             return "WAIT";
         }
 
+        // Convert to the configured units (sensor data is °C and hPa).
+        var app = getApp();
+        var tempText = (app.useFahrenheit() ? (t * 9.0 / 5.0 + 32.0) : t).format("%.1f");
+        var tempUnit = app.useFahrenheit() ? "°F" : "°C";
+        var presUnit = app.getPressureUnit();
+        var presText;
+        var presSuffix;
+        if (presUnit == EnvSettings.PRESSURE_INHG) {
+            presText = (p * 0.0295300).format("%.2f");
+            presSuffix = " inHg";
+        } else if (presUnit == EnvSettings.PRESSURE_MMHG) {
+            presText = (p * 0.750062).format("%.0f");
+            presSuffix = " mmHg";
+        } else {
+            presText = p.format("%.0f");
+            presSuffix = " hPa";
+        }
+
         var text;
         if (slot.show == EnvDeviceState.SHOW_TEMPERATURE) {
-            text = t.format("%.1f") + "°C";
+            text = tempText + tempUnit;
         } else if (slot.show == EnvDeviceState.SHOW_HUMIDITY) {
             text = h.format("%.0f") + "%RH";
         } else if (slot.show == EnvDeviceState.SHOW_PRESSURE) {
-            text = p.format("%.0f") + " hPa";
+            text = presText + presSuffix;
         } else {
-            text = "T:" + t.format("%.1f")
+            text = "T:" + tempText
                 + " H:" + h.format("%.0f")
-                + " P:" + p.format("%.0f");
+                + " P:" + presText;
         }
 
         if ((System.getTimer() - slot.lastDataMs) > STALE_DATA_MS) {
