@@ -9,6 +9,8 @@
 //       show - which quantity the field displays (SHOW_*)
 //     Storage (not Properties) is used because the list has a variable
 //     length; it is edited from the on-device settings menu.
+//   * The displayed sensor (ACTIVE_KEY): the MAC of the sensor the field
+//     shows, or "" to rotate through all of them.
 //   * The nearby-tag list the running data field saves for the settings
 //     menu (NEARBY_KEY, rows [mac, label, rssi, epochSeconds]).
 //   * Display units, kept in Properties (TempUnit / PressureUnit) so they can
@@ -26,6 +28,9 @@ module RuuviConfig {
     const F_MAC = 0;
     const F_NAME = 1;
     const F_SHOW = 2;
+
+    // ---- Displayed sensor ("" = rotate through all) ----
+    const ACTIVE_KEY = "active";
 
     // ---- Nearby tags saved by the data field ----
     const NEARBY_KEY = "nearbyTags";   // new key: older builds used "nearby" with another layout
@@ -127,6 +132,32 @@ module RuuviConfig {
             }
         }
         saveDevices(kept);
+        // The displayed sensor is gone: fall back to rotating.
+        if (mac.equals(getActive())) {
+            setActive("");
+        }
+    }
+
+    //! @return MAC of the sensor the field shows, or "" to rotate
+    function getActive() as String {
+        try {
+            var value = Application.Storage.getValue(ACTIVE_KEY);
+            if (value instanceof String) {
+                return value as String;
+            }
+        } catch (e) {
+            System.println("RuuviSensor: cannot read displayed sensor: " + e.getErrorMessage());
+        }
+        return "";
+    }
+
+    //! @param mac MAC of the sensor to show, or "" to rotate
+    function setActive(mac as String) as Void {
+        try {
+            Application.Storage.setValue(ACTIVE_KEY, mac);
+        } catch (e) {
+            System.println("RuuviSensor: cannot save displayed sensor: " + e.getErrorMessage());
+        }
     }
 
     //! Changes one field (F_NAME or F_SHOW) of the sensor locked to mac.

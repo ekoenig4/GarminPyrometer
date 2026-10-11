@@ -40,6 +40,9 @@ class RuuviScanner extends Ble.BleDelegate {
     // Sensor list rows [mac, name, show] (see RuuviConfig).
     private var mDevices as Array<Array>;
 
+    // MAC of the sensor the field shows, or "" to rotate.
+    private var mActive as String = "";
+
     // Latest readings of listed tags: mac => [tempC, humidity, hPa, timerMs].
     private var mReadings as Dictionary<String, Array>;
 
@@ -58,6 +61,7 @@ class RuuviScanner extends Ble.BleDelegate {
     function initialize() {
         BleDelegate.initialize();
         mDevices = RuuviConfig.loadDevices();
+        mActive = RuuviConfig.getActive();
         mReadings = {} as Dictionary<String, Array>;
         mSeen = {} as Dictionary<String, Array>;
         mLastReloadMs = System.getTimer();
@@ -81,6 +85,7 @@ class RuuviScanner extends Ble.BleDelegate {
     //! Re-reads the sensor list (after a settings change).
     function reloadDevices() as Void {
         mDevices = RuuviConfig.loadDevices();
+        mActive = RuuviConfig.getActive();
         mLastReloadMs = System.getTimer();
     }
 
@@ -108,6 +113,11 @@ class RuuviScanner extends Ble.BleDelegate {
     //! @return Sensor list rows [mac, name, show] (read-only)
     function getDevices() as Array<Array> {
         return mDevices;
+    }
+
+    //! @return MAC of the sensor the field shows, or "" to rotate
+    function getActive() as String {
+        return mActive;
     }
 
     //! @param mac 12 hex digits

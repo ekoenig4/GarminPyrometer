@@ -6,6 +6,7 @@
 // variable-length list, so the sensor list is edited here. Menu tree:
 //
 //   RuuviSensor
+//   +-- Display           -> Rotate all / <sensor>: what the field shows
 //   +-- Sensors           (own sub-menu so the list is clearly separate)
 //   |   +-- + Add sensor  -> Ruuvi tags recently heard by the data field
 //   |   +-- <sensor> ...  (one entry per listed sensor)
@@ -33,6 +34,12 @@ function sensorCountText() as String {
     return RuuviConfig.loadDevices().size() + " of " + RuuviConfig.MAX_DEVICES + " used";
 }
 
+//! @return Name of the displayed sensor, or "Rotate all"
+function displayText() as String {
+    var dev = RuuviConfig.getDevice(RuuviConfig.getActive());
+    return (dev != null) ? (dev[RuuviConfig.F_NAME] as String) : "Rotate all";
+}
+
 //! Sub-label of a sensor's menu item, e.g. "Temperature, BBF3".
 //! @param show RuuviConfig.SHOW_* value
 //! @param mac  12 hex digits
@@ -48,9 +55,10 @@ function describeSensor(show as Number, mac as String) as String {
 
 class RuuviMainMenu extends WatchUi.Menu2 {
 
-    //! Builds the menu: the Sensors sub-menu, then the units.
+    //! Builds the menu: Display, the Sensors sub-menu, then the units.
     function initialize() {
         Menu2.initialize({ :title => "RuuviSensor" });
+        addItem(new WatchUi.MenuItem("Display", displayText(), :display, null));
         addItem(new WatchUi.MenuItem("Sensors", sensorCountText(), :sensors, null));
         addItem(new WatchUi.MenuItem("Temperature unit",
             RuuviConfig.choiceLabel(RuuviConfig.TEMP_UNIT_LABELS,
@@ -70,10 +78,12 @@ class RuuviMainMenuDelegate extends WatchUi.Menu2InputDelegate {
     }
 
     //! Opens the sub-menu for the selected item.
-    //! @param item Selected item (id = :sensors, :tempUnit or :pressureUnit)
+    //! @param item Selected item (id = :display, :sensors, :tempUnit or :pressureUnit)
     function onSelect(item as WatchUi.MenuItem) as Void {
         var id = item.getId();
-        if (id == :sensors) {
+        if (id == :display) {
+            WatchUi.pushView(new RuuviDisplayMenu(), new RuuviDisplayMenuDelegate(item), WatchUi.SLIDE_LEFT);
+        } else if (id == :sensors) {
             var menu = new RuuviSensorsMenu();
             WatchUi.pushView(menu, new RuuviSensorsMenuDelegate(menu, item), WatchUi.SLIDE_LEFT);
         } else if (id == :tempUnit) {
@@ -85,6 +95,50 @@ class RuuviMainMenuDelegate extends WatchUi.Menu2InputDelegate {
             WatchUi.pushView(new RuuviChoiceMenu("Pressure unit", RuuviConfig.PRESSURE_UNIT_LABELS, current),
                 new RuuviChoiceMenuDelegate(:pressureUnit, null, item, null), WatchUi.SLIDE_LEFT);
         }
+    }
+}
+
+// -------------------------------------------------------------------------
+// Display menu: which sensor the field shows
+// -------------------------------------------------------------------------
+
+class RuuviDisplayMenu extends WatchUi.Menu2 {
+
+    //! "Rotate all", then every listed sensor (item id = MAC); the current
+    //! choice is marked "Selected".
+    function initialize() {
+        Menu2.initialize({ :title => "Display" });
+        var active = RuuviConfig.getActive();
+        var devices = RuuviConfig.loadDevices();
+        var fixed = RuuviConfig.findDevice(devices, active) >= 0;
+
+        addItem(new WatchUi.MenuItem("Rotate all", fixed ? "Cycle every 3 s" : "Selected", :rotate, null));
+        for (var i = 0; i < devices.size(); i++) {
+            var mac = devices[i][RuuviConfig.F_MAC] as String;
+            var sub = mac.equals(active) ? "Selected" : null;
+            addItem(new WatchUi.MenuItem(devices[i][RuuviConfig.F_NAME] as String, sub, mac, null));
+        }
+    }
+}
+
+class RuuviDisplayMenuDelegate extends WatchUi.Menu2InputDelegate {
+
+    private var mItem as WatchUi.MenuItem;   // "Display" item in the main menu
+
+    //! @param item "Display" item in the main menu
+    function initialize(item as WatchUi.MenuItem) {
+        Menu2InputDelegate.initialize();
+        mItem = item;
+    }
+
+    //! Stores the chosen sensor ("" for Rotate all) and returns.
+    //! @param item Selected item (id = MAC or :rotate)
+    function onSelect(item as WatchUi.MenuItem) as Void {
+        var id = item.getId();
+        RuuviConfig.setActive((id instanceof String) ? id : "");
+        mItem.setSubLabel(displayText());
+        getApp().applySettings();
+        WatchUi.popView(WatchUi.SLIDE_RIGHT);
     }
 }
 

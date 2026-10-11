@@ -12,8 +12,9 @@
 //
 // The field is drawn by hand (DataField + onUpdate) so single readings use
 // the device's number fonts with the unit in a smaller font beside them, like
-// the native fields. With several sensors in the list the view rotates
-// through them every ROTATE_INTERVAL_MS.
+// the native fields. The field shows the sensor chosen under Display in the
+// settings menu; with "Rotate all" it cycles through the list every
+// ROTATE_INTERVAL_MS.
 //
 import Toybox.Activity;
 import Toybox.Graphics;
@@ -65,7 +66,8 @@ class RuuviSensorView extends WatchUi.DataField {
         DataField.initialize();
         var devices = RuuviConfig.loadDevices();
         if (devices.size() > 0) {
-            mLabel = devices[0][RuuviConfig.F_NAME] as String;
+            var idx = RuuviConfig.findDevice(devices, RuuviConfig.getActive());
+            mLabel = devices[(idx >= 0) ? idx : 0][RuuviConfig.F_NAME] as String;
         }
         mLastRotateMs = System.getTimer();
     }
@@ -93,9 +95,12 @@ class RuuviSensorView extends WatchUi.DataField {
                 return;
             }
 
-            // Rotate through the list.
+            // The sensor chosen under Display, else rotate through the list.
             var now = System.getTimer();
-            if (devices.size() > 1 && (now - mLastRotateMs) >= ROTATE_INTERVAL_MS) {
+            var fixed = RuuviConfig.findDevice(devices, scanner.getActive());
+            if (fixed >= 0) {
+                mActive = fixed;
+            } else if (devices.size() > 1 && (now - mLastRotateMs) >= ROTATE_INTERVAL_MS) {
                 mLastRotateMs = now;
                 mActive++;
             }
