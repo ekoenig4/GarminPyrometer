@@ -10,8 +10,7 @@
 //     Storage (not Properties) is used because the list has a variable
 //     length; it is edited from the on-device settings menu.
 //   * The displayed sensor (ACTIVE_KEY): the MAC of the sensor the field
-//     shows. If unset or no longer listed, the field picks the nearest
-//     listed sensor when it starts ("Nearest at startup").
+//     shows. If unset or no longer listed, the first sensor is shown.
 //   * The nearby-tag list the running data field saves for the settings
 //     menu (NEARBY_KEY, rows [mac, label, rssi, epochSeconds]).
 //   * Display units, kept in Properties (TempUnit / PressureUnit) so they can
@@ -30,7 +29,7 @@ module RuuviConfig {
     const F_NAME = 1;
     const F_SHOW = 2;
 
-    // ---- Displayed sensor ("" = nearest at startup) ----
+    // ---- Displayed sensor ("" = not chosen: first in the list) ----
     const ACTIVE_KEY = "active";
 
     // ---- Nearby tags saved by the data field ----
@@ -133,7 +132,7 @@ module RuuviConfig {
             }
         }
         saveDevices(kept);
-        // The displayed sensor is gone: fall back to nearest at startup.
+        // The displayed sensor is gone: fall back to the first one.
         if (mac.equals(getActive())) {
             setActive("");
         }
@@ -172,6 +171,18 @@ module RuuviConfig {
             devices[idx][field] = value;
             saveDevices(devices);
         }
+    }
+
+    //! @param devices Sensor list
+    //! @param active  MAC chosen under Display ("" if none)
+    //! @return Index of the sensor the field shows: the chosen one if it is
+    //!         listed, else the first; -1 if the list is empty
+    function displayedIndex(devices as Array<Array>, active as String) as Number {
+        if (devices.size() == 0) {
+            return -1;
+        }
+        var idx = findDevice(devices, active);
+        return (idx >= 0) ? idx : 0;
     }
 
     //! @param mac 12 hex digits

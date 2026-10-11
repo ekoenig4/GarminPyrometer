@@ -49,11 +49,6 @@ class RuuviScanner extends Ble.BleDelegate {
     // Every tag heard: mac => [label, rssi, timerMs].
     private var mSeen as Dictionary<String, Array>;
 
-    // Strongest signal heard from each listed tag since scanning started
-    // (mac => dBm), for "Nearest at startup".
-    private var mBestRssi as Dictionary<String, Number>;
-    private var mStartMs as Number = 0;   // when start() was called
-
     // Scan bookkeeping.
     private var mScanning as Boolean = false;
     private var mScanError as String? = null;   // shown on the field
@@ -69,7 +64,6 @@ class RuuviScanner extends Ble.BleDelegate {
         mActive = RuuviConfig.getActive();
         mReadings = {} as Dictionary<String, Array>;
         mSeen = {} as Dictionary<String, Array>;
-        mBestRssi = {} as Dictionary<String, Number>;
         mLastReloadMs = System.getTimer();
     }
 
@@ -79,31 +73,7 @@ class RuuviScanner extends Ble.BleDelegate {
 
     //! Starts scanning (call after Ble.setDelegate()).
     function start() as Void {
-        mStartMs = System.getTimer();
         setScanning(true);
-    }
-
-    //! @return Milliseconds since scanning started
-    function scanAgeMs() as Number {
-        return System.getTimer() - mStartMs;
-    }
-
-    //! @return Index (in getDevices()) of the listed tag with the strongest
-    //!         signal heard since scanning started, or -1 if none was heard
-    function getNearestIndex() as Number {
-        var best = -1;
-        var bestRssi = 0;
-        for (var i = 0; i < mDevices.size(); i++) {
-            var mac = mDevices[i][RuuviConfig.F_MAC] as String;
-            if (mBestRssi.hasKey(mac)) {
-                var rssi = mBestRssi[mac] as Number;
-                if (best < 0 || rssi > bestRssi) {
-                    best = i;
-                    bestRssi = rssi;
-                }
-            }
-        }
-        return best;
     }
 
     //! Stops scanning for good. Called from AppBase.onStop().
@@ -209,14 +179,10 @@ class RuuviScanner extends Ble.BleDelegate {
             var name = result.getDeviceName();
             var label = (name != null && name.length() > 0) ? name : ("Ruuvi " + mac.substring(8, 12));
             var rssi = result.getRssi();
-            var level = (rssi != null) ? rssi : -127;
-            recordSeen(mac, label, level, now);
+            recordSeen(mac, label, (rssi != null) ? rssi : -127, now);
 
             if (RuuviConfig.findDevice(mDevices, mac) >= 0) {
                 mReadings[mac] = [vals[0], vals[1], vals[2], now];
-                if (!mBestRssi.hasKey(mac) || level > (mBestRssi[mac] as Number)) {
-                    mBestRssi[mac] = level;
-                }
             }
         }
     }
