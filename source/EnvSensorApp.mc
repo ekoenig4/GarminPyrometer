@@ -102,7 +102,8 @@ class EnvSensorApp extends Application.AppBase {
         if (mBleDelegate != null) {
             return;
         }
-        if (!(Toybox has :BluetoothLowEnergy)) {
+        var hasBle = (Toybox has :BluetoothLowEnergy);
+        if (hasBle == false) {
             System.println("EnvSensor: BluetoothLowEnergy not supported on this product");
             return;
         }

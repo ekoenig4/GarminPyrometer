@@ -207,41 +207,22 @@ class EnvPickerMenu extends WatchUi.Menu2 {
     function initialize() {
         Menu2.initialize({ :title => "Nearby" });
 
-        var rows = null;
+        var raw = null;
         try {
-            rows = Application.Storage.getValue(EnvSensorBleDelegate.NEARBY_KEY);
+            raw = Application.Storage.getValue(EnvSensorBleDelegate.NEARBY_KEY);
         } catch (e) {
             System.println("EnvSensor: cannot read nearby list: " + e.getErrorMessage());
         }
 
-        if (!(rows instanceof Array) || rows.size() == 0) {
-            addItem(new WatchUi.MenuItem("No devices yet", "Run the data field first", :refresh, null));
-            return;
-        }
-
         var now = Time.now().value();
         var added = 0;
-        for (var i = 0; i < rows.size(); i++) {
-            var row = rows[i];
-            if (!(row instanceof Array) || row.size() < 4) {
-                continue;
+        if (raw instanceof Array) {
+            var rows = raw as Array;
+            for (var i = 0; i < rows.size(); i++) {
+                if (addRow(rows[i], now)) {
+                    added++;
+                }
             }
-            var name = row[0];
-            var rssi = row[1];
-            var hasService = row[2];
-            var stamp = row[3];
-            if (!(name instanceof String) || !(rssi instanceof Number) || !(stamp instanceof Number)) {
-                continue;
-            }
-
-            var sub = rssi.toString() + " dBm" + ((hasService == true) ? " sensor" : "")
-                + ", " + formatAge(now - stamp);
-            if (name.length() == 0) {
-                addItem(new WatchUi.MenuItem("(unnamed sensor)", sub, :auto, null));
-            } else {
-                addItem(new WatchUi.MenuItem(name, sub, name, null));
-            }
-            added++;
         }
 
         if (added == 0) {
@@ -251,19 +232,44 @@ class EnvPickerMenu extends WatchUi.Menu2 {
         }
     }
 
+    //! Adds one saved row as a menu item, skipping malformed rows.
+    //! @param row Saved row [name, rssi, advertisesService, epochSeconds]
+    //! @param now Current time in epoch seconds
+    //! @return true if an item was added
+    private function addRow(row, now as Number) as Boolean {
+        if (!(row instanceof Array)) {
+            return false;
+        }
+        var fields = row as Array;
+        if (fields.size() < 4 || fields[0] == null || fields[1] == null || fields[3] == null) {
+            return false;
+        }
+
+        var name = fields[0].toString();
+        var rssi = fields[1].toString();
+        var hasService = (fields[2] == true);
+        var age = now - (fields[3] as Number);
+
+        var sub = rssi + " dBm" + (hasService ? " sensor" : "") + ", " + formatAge(age);
+        if (name.length() == 0) {
+            addItem(new WatchUi.MenuItem("(unnamed sensor)", sub, :auto, null));
+        } else {
+            addItem(new WatchUi.MenuItem(name, sub, name, null));
+        }
+        return true;
+    }
+
     //! @param seconds Age in seconds
     //! @return e.g. "12s ago", "5min ago", "3h ago"
     private function formatAge(seconds as Number) as String {
-        if (seconds < 0) {
-            seconds = 0;
+        var secs = (seconds < 0) ? 0 : seconds;
+        if (secs < 120) {
+            return secs.toString() + "s ago";
         }
-        if (seconds < 120) {
-            return seconds + "s ago";
+        if (secs < 7200) {
+            return (secs / 60).toString() + "min ago";
         }
-        if (seconds < 7200) {
-            return (seconds / 60) + "min ago";
-        }
-        return (seconds / 3600) + "h ago";
+        return (secs / 3600).toString() + "h ago";
     }
 }
 

@@ -385,8 +385,12 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
         var rows = [];
         for (var i = 0; i < nearby.size(); i++) {
             var dev = nearby[i];
-            var name = dev.hasKey(:auto) ? "" : dev[:name];
-            rows.add([name, dev[:rssi], dev[:hasService], stamp]);
+            var name = "";
+            if (!dev.hasKey(:auto)) {
+                name = dev[:name].toString();
+            }
+            var row = [name, dev[:rssi], dev[:hasService], stamp];
+            rows.add(row);
         }
         try {
             Application.Storage.setValue(NEARBY_KEY, rows);
