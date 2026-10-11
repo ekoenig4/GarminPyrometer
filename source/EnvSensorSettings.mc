@@ -205,7 +205,8 @@ class EnvDeviceMenuDelegate extends WatchUi.Menu2InputDelegate {
 class EnvPickerMenu extends WatchUi.Menu2 {
 
     //! Builds the list from the delegate's discovery results. Devices that
-    //! advertise the active service UUID are marked "sensor".
+    //! advertise the active service UUID are marked "sensor"; an unnamed
+    //! sensor entry selects auto connect.
     function initialize() {
         Menu2.initialize({ :title => "Nearby" });
 
@@ -221,7 +222,8 @@ class EnvPickerMenu extends WatchUi.Menu2 {
         for (var i = 0; i < nearby.size(); i++) {
             var dev = nearby[i];
             var sub = dev[:rssi].toString() + " dBm" + ((dev[:hasService] as Boolean) ? "  sensor" : "");
-            addItem(new WatchUi.MenuItem(dev[:name] as String, sub, dev[:name], null));
+            var id = dev.hasKey(:auto) ? :auto : dev[:name];
+            addItem(new WatchUi.MenuItem(dev[:name] as String, sub, id, null));
         }
     }
 }
@@ -242,10 +244,14 @@ class EnvPickerMenuDelegate extends WatchUi.Menu2InputDelegate {
         mParentItem = parentItem;
     }
 
-    //! Refresh rebuilds the list; any other item stores that device name.
-    //! @param item Selected menu item (id = device name or :refresh)
+    //! Refresh rebuilds the list; "(unnamed sensor)" selects auto connect;
+    //! any other item stores that device name.
+    //! @param item Selected menu item (id = device name, :auto or :refresh)
     function onSelect(item as WatchUi.MenuItem) as Void {
         var id = item.getId();
+        if (id == :auto) {
+            id = EnvSensorBleDelegate.WILDCARD_ID;
+        }
         if (id instanceof String) {
             EnvSettings.setBleId(mSlot, id);
             mDeviceItem.setSubLabel(EnvSettings.describeBleId(id));

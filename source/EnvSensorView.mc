@@ -102,7 +102,8 @@ class EnvSensorView extends WatchUi.SimpleDataField {
     }
 
     //! Formats one device as "<name> | <values>".
-    //!   SCAN            : searching / pairing, never connected since config
+    //!   SCAN <status>   : searching / pairing, never connected since config;
+    //!                     <status> is EnvSensorBleDelegate.getScanStatus()
     //!   ---             : link lost (auto-reconnect in progress)
     //!   WAIT            : connected, first packet not received yet
     //!   T:x H:y P:z     : latest readings ("?" suffix when stale)
@@ -112,7 +113,8 @@ class EnvSensorView extends WatchUi.SimpleDataField {
         var prefix = slot.displayName + " | ";
 
         if (slot.state == EnvDeviceState.STATE_SCANNING) {
-            return prefix + "SCAN";
+            var ble = mBle;
+            return prefix + "SCAN" + ((ble != null) ? (" " + ble.getScanStatus()) : "");
         }
         if (slot.state != EnvDeviceState.STATE_CONNECTED) {
             // Unavailable (or any unexpected state): configured but no link.

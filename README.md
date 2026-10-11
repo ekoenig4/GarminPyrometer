@@ -61,7 +61,7 @@ non-numeric or out of range are dropped and the last good values are kept.
 
 | Text | Meaning |
 | --- | --- |
-| `SCAN` | Searching for / pairing with the device |
+| `SCAN <status>` | Searching for the device. Status: `5 dev` = named devices heard, `+?` = unnamed adverts heard, `UART` = an advert lists the service UUID, `PAIR` = match found and pairing, `OFF` = not scanning, `NO PROFILE` = GATT profile registration failed |
 | `---` | Device was connected and the link dropped; reconnecting |
 | `WAIT` | Connected, no data yet |
 | `T:… H:… P:…?` | Latest readings; `?` means no new data for 30 s |

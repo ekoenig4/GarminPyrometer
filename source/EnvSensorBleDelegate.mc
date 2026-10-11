@@ -133,6 +133,18 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
     private var mDiscovery as Boolean = false;
     private var mSeen as Dictionary<String, Array>;
 
+    // Diagnostics for adverts that carry no name (common when the name is
+    // only in the scan response): last time / RSSI of any unnamed advert and
+    // of an unnamed advert listing the service UUID, plus the last time any
+    // advert listed the service UUID.
+    private var mUnnamedMs as Number = 0;
+    private var mUnnamedSvcMs as Number = 0;
+    private var mUnnamedSvcRssi as Number = -127;
+    private var mServiceSeenMs as Number = 0;
+
+    // True when the GATT profile could not be registered (no pairing possible).
+    private var mProfileFailed as Boolean = false;
+
     // Serialized GATT request queue (slot indices awaiting a CCCD write).
     private var mNotifyQueue as Array<Number>;
     private var mRequestSlot as Number = -1;   // slot with a request in flight
@@ -270,13 +282,57 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
         mDiscovery = on;
         if (on) {
             mSeen = {} as Dictionary<String, Array>;
+            mUnnamedMs = 0;
+            mUnnamedSvcMs = 0;
+            mServiceSeenMs = 0;
         }
         updateScanState();
+    }
+
+    //! Short scan diagnostic for the data field, shown after "SCAN":
+    //!   "NO PROFILE"  GATT profile registration failed
+    //!   "PAIR"        a matching device was found and is being paired
+    //!   "OFF"         scanning is not running
+    //!   "5 dev"       5 named devices heard in the last 30 s
+    //!   "+?"          unnamed adverts are also being heard
+    //!   " UART"       some advert lists the service UUID
+    //! @return Status text
+    function getScanStatus() as String {
+        if (mProfileFailed) {
+            return "NO PROFILE";
+        }
+        if (mPairingSlot >= 0) {
+            return "PAIR";
+        }
+        if (!mScanning) {
+            return "OFF";
+        }
+        var now = System.getTimer();
+        var named = 0;
+        var keys = mSeen.keys();
+        for (var i = 0; i < keys.size(); i++) {
+            var entry = mSeen[keys[i]];
+            if (entry != null && (now - (entry[1] as Number)) <= SEEN_EXPIRY_MS) {
+                named++;
+            }
+        }
+        var text = named + " dev";
+        if (mUnnamedMs != 0 && (now - mUnnamedMs) <= SEEN_EXPIRY_MS) {
+            text += "+?";
+        }
+        if (mServiceSeenMs != 0 && (now - mServiceSeenMs) <= SEEN_EXPIRY_MS) {
+            text += " UART";
+        }
+        return text;
     }
 
     //! Returns nearby named advertisers seen in the last SEEN_EXPIRY_MS,
     //! strongest signal first. Each entry is
     //! { :name => String, :rssi => Number, :hasService => Boolean }.
+    //! If an advert listing the service UUID but carrying no name was heard,
+    //! the first entry is { :name => "(unnamed sensor)", :auto => true, ... }:
+    //! such a device cannot be stored by name, so choosing it selects auto
+    //! connect instead.
     //! @return Array of dictionaries
     function getNearbyDevices() as Array<Dictionary> {
         var now = System.getTimer();
@@ -294,6 +350,10 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
                 pos--;
             }
             out = out.slice(0, pos).addAll([item]).addAll(out.slice(pos, null));
+        }
+        if (mUnnamedSvcMs != 0 && (now - mUnnamedSvcMs) <= SEEN_EXPIRY_MS) {
+            out = [{ :name => "(unnamed sensor)", :rssi => mUnnamedSvcRssi,
+                     :hasService => true, :auto => true }].addAll(out);
         }
         return out;
     }
@@ -330,6 +390,7 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
             }
         } else {
             System.println("EnvSensor: profile registration failed, status " + status);
+            mProfileFailed = true;
         }
         updateScanState();
     }
@@ -355,8 +416,19 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
             }
             var hasService = advertisesService(result);
 
+            var now = System.getTimer();
+            if (hasService) {
+                mServiceSeenMs = now;
+            }
             if (name != null) {
                 recordSeen(name, result.getRssi(), hasService);
+            } else {
+                mUnnamedMs = now;
+                if (hasService) {
+                    mUnnamedSvcMs = now;
+                    var rssi = result.getRssi();
+                    mUnnamedSvcRssi = (rssi != null) ? rssi : -127;
+                }
             }
 
             // No pairing in discovery mode, while another pairing is in
@@ -560,6 +632,7 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
         }
 
         mProfileReady = false;
+        mProfileFailed = false;
         var profile = {
             :uuid => svc,
             :characteristics => [{
@@ -573,6 +646,7 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
         } catch (e) {
             // ProfileRegistrationException: e.g. three profiles already used.
             System.println("EnvSensor: registerProfile failed: " + e.getErrorMessage());
+            mProfileFailed = true;
         }
     }
 
@@ -777,11 +851,34 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
     //! @param name       Advertised name
     //! @param rssi       Signal strength (dBm)
     //! @param hasService true if it advertises the active service UUID
+    //! When the list is full, expired entries are dropped first, then the
+    //! weakest entry if the new device is stronger, so a busy area cannot
+    //! permanently crowd out a newly powered-on sensor.
     private function recordSeen(name as String, rssi as Number?, hasService as Boolean) as Void {
+        var now = System.getTimer();
+        var level = (rssi != null) ? rssi : -127;
+
         if (!mSeen.hasKey(name) && mSeen.size() >= SEEN_MAX) {
-            return;
+            var keys = mSeen.keys();
+            var weakest = null;
+            var weakestRssi = 0;
+            for (var i = 0; i < keys.size(); i++) {
+                var entry = mSeen[keys[i]];
+                if (entry == null || (now - (entry[1] as Number)) > SEEN_EXPIRY_MS) {
+                    mSeen.remove(keys[i]);
+                } else if (weakest == null || (entry[0] as Number) < weakestRssi) {
+                    weakest = keys[i];
+                    weakestRssi = entry[0] as Number;
+                }
+            }
+            if (mSeen.size() >= SEEN_MAX) {
+                if (weakest == null || level <= weakestRssi) {
+                    return;
+                }
+                mSeen.remove(weakest);
+            }
         }
-        mSeen[name] = [(rssi != null) ? rssi : -127, System.getTimer(), hasService];
+        mSeen[name] = [level, now, hasService];
     }
 
     //! Finds the slot that owns a paired device.
