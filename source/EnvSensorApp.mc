@@ -11,6 +11,9 @@
 //     added, removed or renamed mid-activity without restarting the app.
 //   * Provide the on-device settings menu (getSettingsView()), which is the
 //     only way to configure the field when it was side-loaded over USB.
+//     The settings menu never touches BLE: on the Montana, BLE activity in
+//     that context caused a System Error when the menu closed. BLE is set up
+//     only when the app runs as a data field (getInitialView()).
 //
 import Toybox.Application;
 import Toybox.Lang;
@@ -23,28 +26,18 @@ class EnvSensorApp extends Application.AppBase {
     // Number of configurable device slots (matches properties.xml).
     public static const MAX_DEVICES = 3;
 
-    // BLE delegate; null when the product has no BLE support.
+    // BLE delegate; created by startBle() in data field mode only, so it
+    // stays null in the settings menu and on products without BLE.
     private var mBleDelegate as EnvSensorBleDelegate?;
 
-    // True once the delegate is registered with the BLE subsystem.
-    private var mBleStarted as Boolean = false;
-
-    //! Constructor. The BLE delegate is created here (rather than in onStart)
-    //! so it exists before getInitialView() builds the view.
+    //! Constructor.
     function initialize() {
         AppBase.initialize();
-
-        if (Toybox has :BluetoothLowEnergy) {
-            mBleDelegate = new EnvSensorBleDelegate();
-        } else {
-            System.println("EnvSensor: BluetoothLowEnergy not supported on this product");
-        }
     }
 
     //! Called when the app starts, both as a data field and when the
-    //! on-device settings menu is opened. BLE is started later, from
-    //! getInitialView() or getSettingsView(), because the two modes need it
-    //! set up differently.
+    //! on-device settings menu is opened. BLE is started from
+    //! getInitialView() so that the settings menu never uses it.
     //! @param state Startup arguments (unused)
     function onStart(state as Dictionary?) as Void {
     }
@@ -62,7 +55,7 @@ class EnvSensorApp extends Application.AppBase {
     //! Returns the initial view for the data field.
     //! @return Array containing the EnvSensorView
     function getInitialView() {
-        startBle(false);
+        startBle();
         return [new EnvSensorView(mBleDelegate)];
     }
 
@@ -77,19 +70,17 @@ class EnvSensorApp extends Application.AppBase {
     //! Returns the on-device settings menu. On the device this is reached from
     //! the Connect IQ / data field menu ("Settings" under EnvSensor BLE). It is
     //! the only way to configure a side-loaded (USB) install, because Garmin
-    //! Connect shows app settings only for store installs.
+    //! Connect shows app settings only for store installs. The sensor list it
+    //! offers comes from Application.Storage, written by the data field.
     //! @return [Menu2, Menu2InputDelegate]
     function getSettingsView() {
-        // Discovery only: scan for nearby sensors so the "Choose sensor" list
-        // is populated, but never register a profile or pair from here.
-        startBle(true);
         return [new EnvSettingsMenu(), new EnvSettingsMenuDelegate()];
     }
 
     //! Re-reads all properties and pushes them to the BLE delegate. Called
     //! from onSettingsChanged() and by the on-device settings menu after it
-    //! writes a property (Properties.setValue() does not fire
-    //! onSettingsChanged()).
+    //! writes a property. In the settings menu there is no delegate, so this
+    //! only requests a redraw.
     function applySettings() as Void {
         var delegate = mBleDelegate;
         if (delegate != null) {
@@ -104,26 +95,21 @@ class EnvSensorApp extends Application.AppBase {
         WatchUi.requestUpdate();
     }
 
-    //! @return The BLE delegate, or null if BLE is unsupported
-    function getBleDelegate() as EnvSensorBleDelegate? {
-        return mBleDelegate;
-    }
-
-    //! Registers the BLE delegate and applies the stored settings. Idempotent.
-    //! @param discovery true for the settings menu (scan only, no profile, no
-    //!                  pairing); false for the data field (normal operation)
-    private function startBle(discovery as Boolean) as Void {
-        var delegate = mBleDelegate;
-        if (delegate == null || mBleStarted) {
+    //! Creates and registers the BLE delegate, then applies the stored
+    //! settings (registers the GATT profile and starts scanning). Data field
+    //! mode only. Idempotent.
+    private function startBle() as Void {
+        if (mBleDelegate != null) {
+            return;
+        }
+        if (!(Toybox has :BluetoothLowEnergy)) {
+            System.println("EnvSensor: BluetoothLowEnergy not supported on this product");
             return;
         }
         try {
+            var delegate = new EnvSensorBleDelegate();
             Ble.setDelegate(delegate);
-            mBleStarted = true;
-            if (discovery) {
-                // Must precede applyConfig() so no profile gets registered.
-                delegate.setDiscovery(true);
-            }
+            mBleDelegate = delegate;
             delegate.applyConfig(readConfig());
         } catch (e) {
             System.println("EnvSensor: BLE start failed: " + e.getErrorMessage());

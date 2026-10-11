@@ -7,17 +7,22 @@
 //
 //   EnvSensor
 //   +-- Device 1 / 2 / 3
-//       +-- Choose sensor    -> list of nearby BLE devices (scan results)
+//       +-- Choose sensor    -> nearby BLE devices last heard by the data field
 //       +-- Auto connect     -> "*": any sensor advertising the service UUID
 //       +-- Rename           -> on-screen keyboard (if the product has one)
 //       +-- Turn off         -> clears the slot
 //
-// Every change is written with Application.Properties.setValue() and applied
-// immediately via EnvSensorApp.applySettings().
+// Every change is written with Application.Properties.setValue().
+//
+// This menu deliberately makes no BLE calls (BLE activity here caused a
+// System Error on the Montana when the menu closed). The "Choose sensor" list
+// is read from Application.Storage, where the running data field saves the
+// devices it hears every 10 seconds.
 //
 import Toybox.Application;
 import Toybox.Lang;
 import Toybox.System;
+import Toybox.Time;
 import Toybox.WatchUi;
 
 //! Property helpers shared by the settings menus.
@@ -130,16 +135,6 @@ class EnvSettingsMenuDelegate extends WatchUi.Menu2InputDelegate {
         WatchUi.pushView(new EnvDeviceMenu(slot), new EnvDeviceMenuDelegate(slot, item), WatchUi.SLIDE_LEFT);
     }
 
-    //! Leaving settings: stop scanning before the menu closes. Nothing is
-    //! restarted here; settings were already saved as each one was changed,
-    //! and the data field picks them up itself.
-    function onBack() as Void {
-        var ble = getApp().getBleDelegate();
-        if (ble != null) {
-            ble.endDiscovery();
-        }
-        WatchUi.popView(WatchUi.SLIDE_IMMEDIATE);
-    }
 }
 
 // -------------------------------------------------------------------------
@@ -200,32 +195,75 @@ class EnvDeviceMenuDelegate extends WatchUi.Menu2InputDelegate {
 }
 
 // -------------------------------------------------------------------------
-// Sensor picker: nearby BLE devices from discovery scanning
+// Sensor picker: nearby BLE devices saved by the data field
 // -------------------------------------------------------------------------
 
 class EnvPickerMenu extends WatchUi.Menu2 {
 
-    //! Builds the list from the delegate's discovery results. Devices that
-    //! advertise the active service UUID are marked "sensor"; an unnamed
-    //! sensor entry selects auto connect.
+    //! Builds the list from the rows the data field saved to
+    //! Application.Storage ([name, rssi, advertisesService, epochSeconds]).
+    //! Devices that advertise the active service UUID are marked "sensor";
+    //! an unnamed sensor (name "") selects auto connect.
     function initialize() {
         Menu2.initialize({ :title => "Nearby" });
 
-        var ble = getApp().getBleDelegate();
-        var nearby = (ble != null) ? ble.getNearbyDevices() : [];
+        var rows = null;
+        try {
+            rows = Application.Storage.getValue(EnvSensorBleDelegate.NEARBY_KEY);
+        } catch (e) {
+            System.println("EnvSensor: cannot read nearby list: " + e.getErrorMessage());
+        }
 
-        if (nearby.size() == 0) {
-            addItem(new WatchUi.MenuItem("Searching...", "Select to refresh", :refresh, null));
+        if (!(rows instanceof Array) || rows.size() == 0) {
+            addItem(new WatchUi.MenuItem("No devices yet", "Run the data field first", :refresh, null));
             return;
         }
 
-        addItem(new WatchUi.MenuItem("Refresh list", nearby.size() + " found", :refresh, null));
-        for (var i = 0; i < nearby.size(); i++) {
-            var dev = nearby[i];
-            var sub = dev[:rssi].toString() + " dBm" + ((dev[:hasService] as Boolean) ? "  sensor" : "");
-            var id = dev.hasKey(:auto) ? :auto : dev[:name];
-            addItem(new WatchUi.MenuItem(dev[:name] as String, sub, id, null));
+        var now = Time.now().value();
+        var added = 0;
+        for (var i = 0; i < rows.size(); i++) {
+            var row = rows[i];
+            if (!(row instanceof Array) || row.size() < 4) {
+                continue;
+            }
+            var name = row[0];
+            var rssi = row[1];
+            var hasService = row[2];
+            var stamp = row[3];
+            if (!(name instanceof String) || !(rssi instanceof Number) || !(stamp instanceof Number)) {
+                continue;
+            }
+
+            var sub = rssi.toString() + " dBm" + ((hasService == true) ? " sensor" : "")
+                + ", " + formatAge(now - stamp);
+            if (name.length() == 0) {
+                addItem(new WatchUi.MenuItem("(unnamed sensor)", sub, :auto, null));
+            } else {
+                addItem(new WatchUi.MenuItem(name, sub, name, null));
+            }
+            added++;
         }
+
+        if (added == 0) {
+            addItem(new WatchUi.MenuItem("No devices yet", "Run the data field first", :refresh, null));
+        } else {
+            addItem(new WatchUi.MenuItem("Refresh list", "List updates every 10 s", :refresh, null));
+        }
+    }
+
+    //! @param seconds Age in seconds
+    //! @return e.g. "12s ago", "5min ago", "3h ago"
+    private function formatAge(seconds as Number) as String {
+        if (seconds < 0) {
+            seconds = 0;
+        }
+        if (seconds < 120) {
+            return seconds + "s ago";
+        }
+        if (seconds < 7200) {
+            return (seconds / 60) + "min ago";
+        }
+        return (seconds / 3600) + "h ago";
     }
 }
 

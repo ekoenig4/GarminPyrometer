@@ -30,9 +30,12 @@ Garmin Connect only shows app settings for store installs. For a side-loaded
 `.prg`, open the device's Connect IQ / data field menu, select **EnvSensor
 BLE → Settings**, then for each device:
 
-- **Choose sensor** — lists nearby BLE devices by name and signal strength
-  (the menu scans while it is open; pick *Refresh list* to update). Devices
-  advertising the configured service UUID are marked `sensor`.
+- **Choose sensor** — lists nearby BLE devices by name, signal strength and
+  how long ago they were heard. The menu itself does not use Bluetooth: the
+  running data field saves what it hears every 10 s, so show the data field
+  near your sensors for a little while first. Devices advertising the
+  configured service UUID are marked `sensor`; *(unnamed sensor)* selects
+  auto connect.
 - **Auto connect** — stores `*`: connect to any sensor advertising the service
   UUID (Nordic UART by default). This is the default for Device 1.
 - **Rename** — sets the display name (needs an on-screen keyboard).

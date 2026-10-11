@@ -18,10 +18,15 @@
 //   * If the product supports fewer simultaneous connections than there are
 //     configured devices, connected devices are rotated out periodically so
 //     every sensor gets a turn (sequential cycling).
+//   * Nearby advertisers heard while scanning are saved to Application.Storage
+//     so the on-device settings menu can list them without using BLE itself
+//     (BLE use from the settings menu crashed the Montana on exit).
 //
+import Toybox.Application;
 import Toybox.Lang;
 import Toybox.System;
 import Toybox.StringUtil;
+import Toybox.Time;
 import Toybox.WatchUi;
 using Toybox.BluetoothLowEnergy as Ble;
 
@@ -98,6 +103,10 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
     private const CYCLE_INTERVAL_MS    = 60000;   // min connected time before rotation
     private const SEEN_EXPIRY_MS       = 30000;   // drop nearby-device entries after this
     private const SEEN_MAX             = 20;      // cap on remembered nearby devices
+    private const PUBLISH_INTERVAL_MS  = 10000;   // nearby list -> Storage
+
+    // Application.Storage key of the nearby-device list (read by settings).
+    public static const NEARBY_KEY = "nearby";
 
     // CCCD value enabling notifications.
     private const CCCD_ENABLE_NOTIFY = [0x01, 0x00]b;
@@ -128,10 +137,10 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
     private var mScanning as Boolean = false;
     private var mPairingSlot as Number = -1;   // slot index with pairDevice() in flight
 
-    // Discovery mode (on-device settings): scan without pairing and remember
-    // nearby advertisers. Name => [rssi, lastSeenMs, advertisesService].
-    private var mDiscovery as Boolean = false;
+    // Nearby advertisers heard while scanning, for the settings menu.
+    // Name => [rssi, lastSeenMs, advertisesService].
     private var mSeen as Dictionary<String, Array>;
+    private var mLastPublishMs as Number = 0;   // last Storage write
 
     // Diagnostics for adverts that carry no name (common when the name is
     // only in the scan response): last time / RSSI of any unnamed advert and
@@ -148,7 +157,7 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
     // True once registerProfile() has been attempted for the active UUIDs.
     private var mProfileRequested as Boolean = false;
 
-    // True after endDiscovery()/shutdown(): no further BLE calls are made.
+    // True after shutdown(): no further scans are started.
     private var mEnded as Boolean = false;
 
     // Serialized GATT request queue (slot indices awaiting a CCCD write).
@@ -203,11 +212,7 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
             mCharUuid = chr;
             mProfileRequested = false;
             mProfileReady = false;
-            // The settings menu (discovery) never needs the profile; the data
-            // field registers it here, or from tick() later.
-            if (!mDiscovery) {
-                registerProfile();
-            }
+            registerProfile();
         }
 
         // ---- Update slots ----
@@ -240,9 +245,15 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
     function tick() as Void {
         var now = System.getTimer();
 
-        // ---- Profile not registered yet (e.g. UUIDs changed in discovery) ----
-        if (!mDiscovery && !mEnded && !mProfileRequested) {
+        // ---- Profile not registered yet (e.g. UUIDs unset at start) ----
+        if (!mEnded && !mProfileRequested) {
             registerProfile();
+        }
+
+        // ---- Share the nearby-device list with the settings menu ----
+        if ((now - mLastPublishMs) >= PUBLISH_INTERVAL_MS) {
+            mLastPublishMs = now;
+            publishNearby();
         }
 
         // ---- Stuck GATT request: drop it and move on ----
@@ -289,30 +300,6 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
         for (var i = 0; i < mSlots.size(); i++) {
             releaseSlot(i);
         }
-        setScanning(false);
-    }
-
-    //! Turns discovery mode on/off. While on, the delegate scans continuously,
-    //! records every named advertiser (see getNearbyDevices()) and does not
-    //! pair with anything, so the settings menu can offer a device list.
-    //! @param on true to enable discovery
-    function setDiscovery(on as Boolean) as Void {
-        mDiscovery = on;
-        if (on) {
-            mSeen = {} as Dictionary<String, Array>;
-            mUnnamedMs = 0;
-            mUnnamedSvcMs = 0;
-            mServiceSeenMs = 0;
-        }
-        updateScanState();
-    }
-
-    //! Ends discovery when the settings menu closes: stops scanning and does
-    //! not resume normal scanning (the app is about to exit, and starting a
-    //! scan during teardown is what we must avoid).
-    function endDiscovery() as Void {
-        mDiscovery = false;
-        mEnded = true;
         setScanning(false);
     }
 
@@ -383,6 +370,29 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
                      :hasService => true, :auto => true }].addAll(out);
         }
         return out;
+    }
+
+    //! Saves the nearby-device list to Application.Storage under NEARBY_KEY
+    //! as an array of [name, rssi, advertisesService, epochSeconds]. An
+    //! unnamed advert listing the service UUID is stored with name "".
+    //! Only written while there is something to report.
+    private function publishNearby() as Void {
+        var nearby = getNearbyDevices();
+        if (nearby.size() == 0) {
+            return;
+        }
+        var stamp = Time.now().value();
+        var rows = [];
+        for (var i = 0; i < nearby.size(); i++) {
+            var dev = nearby[i];
+            var name = dev.hasKey(:auto) ? "" : dev[:name];
+            rows.add([name, dev[:rssi], dev[:hasService], stamp]);
+        }
+        try {
+            Application.Storage.setValue(NEARBY_KEY, rows);
+        } catch (e) {
+            System.println("EnvSensor: cannot save nearby list: " + e.getErrorMessage());
+        }
     }
 
     //! @return Array of all slot state objects (view must treat as read-only)
@@ -458,10 +468,9 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
                 }
             }
 
-            // No pairing in discovery mode, while another pairing is in
-            // flight (one at a time keeps the BLE stack happy), or before
-            // the GATT profile is registered.
-            if (mDiscovery || mPairingSlot >= 0 || !mProfileReady) {
+            // No pairing while another pairing is in flight (one at a time
+            // keeps the BLE stack happy) or before the profile is registered.
+            if (mPairingSlot >= 0 || !mProfileReady) {
                 continue;
             }
 
@@ -979,12 +988,10 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
         }
     }
 
-    //! Starts scanning when nothing is being paired and either discovery mode
-    //! is on, or a profile is ready, a slot is waiting and a connection is
-    //! free; stops it otherwise (saves power).
+    //! Starts scanning when a profile is ready, a slot is waiting, nothing is
+    //! being paired and a connection is free; stops it otherwise (saves power).
     private function updateScanState() as Void {
-        var want = mPairingSlot < 0
-            && (mDiscovery || (mProfileReady && hasUnpairedSlot() && freeConnections() > 0));
+        var want = mPairingSlot < 0 && mProfileReady && hasUnpairedSlot() && freeConnections() > 0;
         setScanning(want);
     }
 
