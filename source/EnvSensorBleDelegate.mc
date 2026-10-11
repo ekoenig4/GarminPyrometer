@@ -56,7 +56,7 @@ class EnvDeviceState {
 
     public var bleId as String = "";        // Advertised name to match
     public var displayName as String = "";  // Label shown on screen
-    public var show as Number = SHOW_ALL;   // One of the SHOW_* values
+    public var show as Number = SHOW_TEMPERATURE;   // One of the SHOW_* values (default temperature)
     public var state as Number = STATE_DISABLED;
 
     // Last known good readings (null until the first valid packet).
@@ -268,9 +268,9 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
                 slot.displayName = newName;
             }
 
-            var show = (i < shows.size() && shows[i] != null) ? shows[i] : EnvDeviceState.SHOW_ALL;
+            var show = (i < shows.size() && shows[i] != null) ? shows[i] : EnvDeviceState.SHOW_TEMPERATURE;
             slot.show = (show >= EnvDeviceState.SHOW_ALL && show <= EnvDeviceState.SHOW_PRESSURE)
-                ? show : EnvDeviceState.SHOW_ALL;
+                ? show : EnvDeviceState.SHOW_TEMPERATURE;
 
             if (slot.isEnabled()) {
                 mStateByName[slot.displayName] = slot;

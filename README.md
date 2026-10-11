@@ -69,7 +69,7 @@ this problem.
 | --- | --- |
 | `Device1BleId` … `Device3BleId` | Advertised BLE name to match (case-insensitive). `*` = any sensor advertising the service UUID. Blank disables the slot. |
 | `Device1DisplayName` … `Device3DisplayName` | Label shown as the field's header. |
-| `Device1Show` … `Device3Show` | Quantity shown: 0 = all, 1 = temperature, 2 = humidity, 3 = pressure. |
+| `Device1Show` … `Device3Show` | Quantity shown: 0 = all, 1 = temperature (default), 2 = humidity, 3 = pressure. |
 | `TempUnit` | 0 = follow the device's unit setting, 1 = °C, 2 = °F. |
 | `PressureUnit` | 0 = hPa, 1 = inHg, 2 = mmHg. |
 | `CustomServiceUuid` | Optional service UUID; blank = Nordic UART `6E400001-B5A3-F393-E0A9-E50E24DCCA9E`. |

@@ -121,7 +121,7 @@ module EnvSettings {
     }
 
     //! @param slot Slot index (0-based)
-    //! @return Stored quantity to show (EnvDeviceState.SHOW_*), default All
+    //! @return Stored quantity to show (EnvDeviceState.SHOW_*), default Temperature
     function getShow(slot as Number) as Number {
         try {
             var value = Application.Properties.getValue("Device" + (slot + 1) + "Show");
@@ -131,7 +131,7 @@ module EnvSettings {
         } catch (e) {
             System.println("RuuviSensor: missing property Device" + (slot + 1) + "Show");
         }
-        return EnvDeviceState.SHOW_ALL;
+        return EnvDeviceState.SHOW_TEMPERATURE;
     }
 
     //! Stores the quantity to show and applies the configuration.
