@@ -41,9 +41,6 @@ BLE → Settings**, then for each device:
 - **Rename** — sets the display name (needs an on-screen keyboard).
 - **Turn off** — disables the slot.
 
-Tap **Done** to leave the settings (the title-bar back arrow needs two taps on
-the Montana touchscreen: the first only highlights it).
-
 ### Garmin Connect (store installs)
 
 | Property | Meaning |
