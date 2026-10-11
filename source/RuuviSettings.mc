@@ -77,6 +77,20 @@ class RuuviMainMenuDelegate extends WatchUi.Menu2InputDelegate {
         Menu2InputDelegate.initialize();
     }
 
+    //! Leaving the settings. On the Montana, letting the last menu simply be
+    //! popped leaves the app half-closed: the menu stays on screen but is
+    //! dead until a second back press, and the data field is not restarted
+    //! afterwards (it shows the app icon until it is re-added). Ending the
+    //! app explicitly is an attempt to close it cleanly instead. Falls back
+    //! to the normal pop where System.exit() is unavailable.
+    function onBack() as Void {
+        System.println("RuuviSensor: leaving settings");
+        if (System has :exit) {
+            System.exit();
+        }
+        WatchUi.popView(WatchUi.SLIDE_RIGHT);
+    }
+
     //! Opens the sub-menu for the selected item.
     //! @param item Selected item (id = :display, :sensors, :tempUnit or :pressureUnit)
     function onSelect(item as WatchUi.MenuItem) as Void {
