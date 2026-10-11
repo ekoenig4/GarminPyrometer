@@ -48,10 +48,6 @@ class EnvSensorView extends WatchUi.DataField {
         Graphics.FONT_LARGE, Graphics.FONT_MEDIUM, Graphics.FONT_SMALL,
         Graphics.FONT_TINY, Graphics.FONT_XTINY
     ];
-    // Share of a font's line height taken by digits / capitals (the rest is
-    // padding and descent); used to fit and align values.
-    private const GLYPH_RATIO = 0.8;
-
     private const TEXT_FONTS = [
         Graphics.FONT_LARGE, Graphics.FONT_MEDIUM, Graphics.FONT_SMALL,
         Graphics.FONT_TINY, Graphics.FONT_XTINY
@@ -137,8 +133,9 @@ class EnvSensorView extends WatchUi.DataField {
         var h = dc.getHeight();
 
         // ---- Header ----
-        var labelFont = (h >= 120) ? Graphics.FONT_MEDIUM
-            : ((h >= 70) ? Graphics.FONT_SMALL : Graphics.FONT_TINY);
+        // System fonts, as used by the device's own data field labels.
+        var labelFont = (h >= 120) ? Graphics.FONT_SYSTEM_MEDIUM
+            : ((h >= 70) ? Graphics.FONT_SYSTEM_SMALL : Graphics.FONT_SYSTEM_TINY);
         var labelH = dc.getFontHeight(labelFont);
         dc.drawText(w / 2, 1, labelFont, mLabel, Graphics.TEXT_JUSTIFY_CENTER);
 
@@ -147,8 +144,8 @@ class EnvSensorView extends WatchUi.DataField {
         var avail = h - top;
         var maxW = w - 6;
         // Unit one size up from the header so it stays readable.
-        var unitFont = (labelFont == Graphics.FONT_MEDIUM) ? Graphics.FONT_LARGE
-            : ((labelFont == Graphics.FONT_SMALL) ? Graphics.FONT_MEDIUM : Graphics.FONT_SMALL);
+        var unitFont = (h >= 120) ? Graphics.FONT_LARGE
+            : ((h >= 70) ? Graphics.FONT_MEDIUM : Graphics.FONT_SMALL);
         var unitW = (mUnit.length() > 0) ? dc.getTextWidthInPixels(" " + mUnit, unitFont) : 0;
 
         var fonts = mNumeric ? NUMBER_FONTS : TEXT_FONTS;
@@ -167,10 +164,9 @@ class EnvSensorView extends WatchUi.DataField {
         var cy = top + avail / 2;
         dc.drawText(x, cy, font, mValue, Graphics.TEXT_JUSTIFY_LEFT | Graphics.TEXT_JUSTIFY_VCENTER);
         if (unitW > 0) {
-            // Unit sits on the value's baseline, like the native fields.
-            var valueBottom = cy + dc.getFontHeight(font) * GLYPH_RATIO / 2;
-            var unitTop = valueBottom - dc.getFontHeight(unitFont) * GLYPH_RATIO;
-            dc.drawText(x + valueW, unitTop.toNumber(), unitFont, " " + mUnit, Graphics.TEXT_JUSTIFY_LEFT);
+            // Unit vertically centred on the number, directly beside it.
+            dc.drawText(x + valueW, cy, unitFont, " " + mUnit,
+                Graphics.TEXT_JUSTIFY_LEFT | Graphics.TEXT_JUSTIFY_VCENTER);
         }
     }
 
