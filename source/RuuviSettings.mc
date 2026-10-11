@@ -6,16 +6,17 @@
 // variable-length list, so the sensor list is edited here. Menu tree:
 //
 //   RuuviSensor
-//   +-- Add sensor        -> Ruuvi tags recently heard by the data field
+//   +-- Sensors           (own sub-menu so the list is clearly separate)
+//   |   +-- + Add sensor  -> Ruuvi tags recently heard by the data field
+//   |   +-- <sensor> ...  (one entry per listed sensor)
+//   |       +-- Show      -> All / Temperature / Humidity / Pressure
+//   |       +-- Rename    -> on-screen keyboard (if the product has one)
+//   |       +-- Remove
 //   +-- Temperature unit  -> Device setting / °C / °F
 //   +-- Pressure unit     -> hPa / inHg / mmHg
-//   +-- <sensor name> ... (one entry per listed sensor)
-//       +-- Show          -> All / Temperature / Humidity / Pressure
-//       +-- Rename        -> on-screen keyboard (if the product has one)
-//       +-- Remove
 //
 // Sensors are locked to the MAC address of the tag they were added from;
-// the main menu item id of a sensor is that MAC.
+// the Sensors menu item id of a sensor is that MAC.
 //
 // This menu makes no BLE calls (BLE activity here caused a System Error on
 // the Montana when the menu closed). The "Add sensor" list is read from
@@ -27,7 +28,12 @@ import Toybox.System;
 import Toybox.Time;
 import Toybox.WatchUi;
 
-//! Sub-label of a sensor's main menu item, e.g. "Temperature, BBF3".
+//! @return Sensor count text, e.g. "2 of 8 used"
+function sensorCountText() as String {
+    return RuuviConfig.loadDevices().size() + " of " + RuuviConfig.MAX_DEVICES + " used";
+}
+
+//! Sub-label of a sensor's menu item, e.g. "Temperature, BBF3".
 //! @param show RuuviConfig.SHOW_* value
 //! @param mac  12 hex digits
 //! @return Sub-label text
@@ -37,18 +43,15 @@ function describeSensor(show as Number, mac as String) as String {
 }
 
 // -------------------------------------------------------------------------
-// Main menu
+// Main menu: Sensors, units
 // -------------------------------------------------------------------------
 
 class RuuviMainMenu extends WatchUi.Menu2 {
 
-    //! Builds the menu: Add sensor, units, then one item per listed sensor.
+    //! Builds the menu: the Sensors sub-menu, then the units.
     function initialize() {
         Menu2.initialize({ :title => "RuuviSensor" });
-        var devices = RuuviConfig.loadDevices();
-
-        addItem(new WatchUi.MenuItem("Add sensor",
-            devices.size() + " of " + RuuviConfig.MAX_DEVICES + " used", :add, null));
+        addItem(new WatchUi.MenuItem("Sensors", sensorCountText(), :sensors, null));
         addItem(new WatchUi.MenuItem("Temperature unit",
             RuuviConfig.choiceLabel(RuuviConfig.TEMP_UNIT_LABELS,
                 RuuviConfig.getNumber(RuuviConfig.TEMP_UNIT_KEY, RuuviConfig.TEMP_DEVICE)),
@@ -57,7 +60,46 @@ class RuuviMainMenu extends WatchUi.Menu2 {
             RuuviConfig.choiceLabel(RuuviConfig.PRESSURE_UNIT_LABELS,
                 RuuviConfig.getNumber(RuuviConfig.PRESSURE_UNIT_KEY, RuuviConfig.PRESSURE_HPA)),
             :pressureUnit, null));
+    }
+}
 
+class RuuviMainMenuDelegate extends WatchUi.Menu2InputDelegate {
+
+    function initialize() {
+        Menu2InputDelegate.initialize();
+    }
+
+    //! Opens the sub-menu for the selected item.
+    //! @param item Selected item (id = :sensors, :tempUnit or :pressureUnit)
+    function onSelect(item as WatchUi.MenuItem) as Void {
+        var id = item.getId();
+        if (id == :sensors) {
+            var menu = new RuuviSensorsMenu();
+            WatchUi.pushView(menu, new RuuviSensorsMenuDelegate(menu, item), WatchUi.SLIDE_LEFT);
+        } else if (id == :tempUnit) {
+            var current = RuuviConfig.getNumber(RuuviConfig.TEMP_UNIT_KEY, RuuviConfig.TEMP_DEVICE);
+            WatchUi.pushView(new RuuviChoiceMenu("Temperature unit", RuuviConfig.TEMP_UNIT_LABELS, current),
+                new RuuviChoiceMenuDelegate(:tempUnit, null, item, null), WatchUi.SLIDE_LEFT);
+        } else if (id == :pressureUnit) {
+            var current = RuuviConfig.getNumber(RuuviConfig.PRESSURE_UNIT_KEY, RuuviConfig.PRESSURE_HPA);
+            WatchUi.pushView(new RuuviChoiceMenu("Pressure unit", RuuviConfig.PRESSURE_UNIT_LABELS, current),
+                new RuuviChoiceMenuDelegate(:pressureUnit, null, item, null), WatchUi.SLIDE_LEFT);
+        }
+    }
+}
+
+// -------------------------------------------------------------------------
+// Sensors menu: "+ Add sensor", then one item per listed sensor
+// -------------------------------------------------------------------------
+
+class RuuviSensorsMenu extends WatchUi.Menu2 {
+
+    //! Builds the sensor list (item id of a sensor = its MAC).
+    function initialize() {
+        Menu2.initialize({ :title => "Sensors" });
+        addItem(new WatchUi.MenuItem("+ Add sensor", sensorCountText(), :add, null));
+
+        var devices = RuuviConfig.loadDevices();
         for (var i = 0; i < devices.size(); i++) {
             var dev = devices[i];
             var mac = dev[RuuviConfig.F_MAC] as String;
@@ -67,32 +109,28 @@ class RuuviMainMenu extends WatchUi.Menu2 {
     }
 }
 
-class RuuviMainMenuDelegate extends WatchUi.Menu2InputDelegate {
+class RuuviSensorsMenuDelegate extends WatchUi.Menu2InputDelegate {
 
-    private var mMenu as RuuviMainMenu;   // to add / remove sensor items
+    private var mMenu as RuuviSensorsMenu;        // to add / remove sensor items
+    private var mMainItem as WatchUi.MenuItem;    // "Sensors" item in the main menu
 
-    //! @param menu The main menu
-    function initialize(menu as RuuviMainMenu) {
+    //! @param menu     The sensors menu
+    //! @param mainItem "Sensors" item in the main menu (shows the count)
+    function initialize(menu as RuuviSensorsMenu, mainItem as WatchUi.MenuItem) {
         Menu2InputDelegate.initialize();
         mMenu = menu;
+        mMainItem = mainItem;
     }
 
-    //! Opens the sub-menu for the selected item.
-    //! @param item Selected item (id = :add, :tempUnit, :pressureUnit or a MAC)
+    //! Opens "Add sensor" or the selected sensor's menu.
+    //! @param item Selected item (id = :add or a MAC)
     function onSelect(item as WatchUi.MenuItem) as Void {
         var id = item.getId();
         if (id == :add) {
-            WatchUi.pushView(new RuuviAddMenu(), new RuuviAddMenuDelegate(mMenu, item), WatchUi.SLIDE_LEFT);
-        } else if (id == :tempUnit) {
-            var current = RuuviConfig.getNumber(RuuviConfig.TEMP_UNIT_KEY, RuuviConfig.TEMP_DEVICE);
-            WatchUi.pushView(new RuuviChoiceMenu("Temperature unit", RuuviConfig.TEMP_UNIT_LABELS, current),
-                new RuuviChoiceMenuDelegate(:tempUnit, null, item, null), WatchUi.SLIDE_LEFT);
-        } else if (id == :pressureUnit) {
-            var current = RuuviConfig.getNumber(RuuviConfig.PRESSURE_UNIT_KEY, RuuviConfig.PRESSURE_HPA);
-            WatchUi.pushView(new RuuviChoiceMenu("Pressure unit", RuuviConfig.PRESSURE_UNIT_LABELS, current),
-                new RuuviChoiceMenuDelegate(:pressureUnit, null, item, null), WatchUi.SLIDE_LEFT);
+            WatchUi.pushView(new RuuviAddMenu(), new RuuviAddMenuDelegate(mMenu, item, mMainItem),
+                WatchUi.SLIDE_LEFT);
         } else if (id instanceof String) {
-            WatchUi.pushView(new RuuviSensorMenu(id), new RuuviSensorMenuDelegate(id, mMenu, item),
+            WatchUi.pushView(new RuuviSensorMenu(id), new RuuviSensorMenuDelegate(id, mMenu, item, mMainItem),
                 WatchUi.SLIDE_LEFT);
         }
     }
@@ -181,15 +219,19 @@ class RuuviAddMenu extends WatchUi.Menu2 {
 
 class RuuviAddMenuDelegate extends WatchUi.Menu2InputDelegate {
 
-    private var mMainMenu as RuuviMainMenu;
-    private var mAddItem as WatchUi.MenuItem;   // "Add sensor" (shows count)
+    private var mSensorsMenu as RuuviSensorsMenu;
+    private var mAddItem as WatchUi.MenuItem;    // "+ Add sensor" (shows count)
+    private var mMainItem as WatchUi.MenuItem;   // "Sensors" in the main menu
 
-    //! @param mainMenu Main menu to add the new sensor to
-    //! @param addItem  "Add sensor" item in the main menu
-    function initialize(mainMenu as RuuviMainMenu, addItem as WatchUi.MenuItem) {
+    //! @param sensorsMenu Sensors menu to add the new sensor to
+    //! @param addItem     "+ Add sensor" item
+    //! @param mainItem    "Sensors" item in the main menu
+    function initialize(sensorsMenu as RuuviSensorsMenu, addItem as WatchUi.MenuItem,
+            mainItem as WatchUi.MenuItem) {
         Menu2InputDelegate.initialize();
-        mMainMenu = mainMenu;
+        mSensorsMenu = sensorsMenu;
         mAddItem = addItem;
+        mMainItem = mainItem;
     }
 
     //! A tag adds a sensor locked to its MAC; "Refresh" rebuilds the list.
@@ -199,15 +241,15 @@ class RuuviAddMenuDelegate extends WatchUi.Menu2InputDelegate {
         if (id instanceof String) {
             var name = item.getLabel();
             if (RuuviConfig.addDevice(id, name)) {
-                mMainMenu.addItem(new WatchUi.MenuItem(name,
+                mSensorsMenu.addItem(new WatchUi.MenuItem(name,
                     describeSensor(RuuviConfig.SHOW_TEMPERATURE, id), id, null));
-                mAddItem.setSubLabel(RuuviConfig.loadDevices().size() + " of "
-                    + RuuviConfig.MAX_DEVICES + " used");
+                mAddItem.setSubLabel(sensorCountText());
+                mMainItem.setSubLabel(sensorCountText());
                 getApp().applySettings();
             }
             WatchUi.popView(WatchUi.SLIDE_RIGHT);
         } else if (id == :refresh) {
-            WatchUi.switchToView(new RuuviAddMenu(), new RuuviAddMenuDelegate(mMainMenu, mAddItem),
+            WatchUi.switchToView(new RuuviAddMenu(), new RuuviAddMenuDelegate(mSensorsMenu, mAddItem, mMainItem),
                 WatchUi.SLIDE_IMMEDIATE);
         } else {
             WatchUi.popView(WatchUi.SLIDE_RIGHT);
@@ -240,17 +282,21 @@ class RuuviSensorMenu extends WatchUi.Menu2 {
 class RuuviSensorMenuDelegate extends WatchUi.Menu2InputDelegate {
 
     private var mMac as String;
-    private var mMainMenu as RuuviMainMenu;
-    private var mMainItem as WatchUi.MenuItem;   // this sensor's main-menu item
+    private var mSensorsMenu as RuuviSensorsMenu;
+    private var mMainItem as WatchUi.MenuItem;      // this sensor's item in the Sensors menu
+    private var mCountItem as WatchUi.MenuItem;     // "Sensors" in the main menu
 
-    //! @param mac      MAC of the sensor
-    //! @param mainMenu Main menu (to remove the item)
-    //! @param mainItem This sensor's item in the main menu
-    function initialize(mac as String, mainMenu as RuuviMainMenu, mainItem as WatchUi.MenuItem) {
+    //! @param mac         MAC of the sensor
+    //! @param sensorsMenu Sensors menu (to remove the item)
+    //! @param mainItem    This sensor's item in the Sensors menu
+    //! @param countItem   "Sensors" item in the main menu
+    function initialize(mac as String, sensorsMenu as RuuviSensorsMenu, mainItem as WatchUi.MenuItem,
+            countItem as WatchUi.MenuItem) {
         Menu2InputDelegate.initialize();
         mMac = mac;
-        mMainMenu = mainMenu;
+        mSensorsMenu = sensorsMenu;
         mMainItem = mainItem;
+        mCountItem = countItem;
     }
 
     //! Handles Show / Rename / Remove.
@@ -267,18 +313,18 @@ class RuuviSensorMenuDelegate extends WatchUi.Menu2InputDelegate {
                 new RuuviRenameDelegate(mMac, item, mMainItem), WatchUi.SLIDE_LEFT);
         } else if (id == :remove) {
             RuuviConfig.removeDevice(mMac);
-            var idx = mMainMenu.findItemById(mMac);
+            var idx = mSensorsMenu.findItemById(mMac);
             if (idx >= 0) {
-                mMainMenu.deleteItem(idx);
+                mSensorsMenu.deleteItem(idx);
             }
-            var addIdx = mMainMenu.findItemById(:add);
+            var addIdx = mSensorsMenu.findItemById(:add);
             if (addIdx >= 0) {
-                var addItem = mMainMenu.getItem(addIdx);
+                var addItem = mSensorsMenu.getItem(addIdx);
                 if (addItem != null) {
-                    addItem.setSubLabel(RuuviConfig.loadDevices().size() + " of "
-                        + RuuviConfig.MAX_DEVICES + " used");
+                    addItem.setSubLabel(sensorCountText());
                 }
             }
+            mCountItem.setSubLabel(sensorCountText());
             getApp().applySettings();
             WatchUi.popView(WatchUi.SLIDE_RIGHT);
         }

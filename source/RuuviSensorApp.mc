@@ -63,8 +63,7 @@ class RuuviSensorApp extends Application.AppBase {
     //! device it is reached from the Connect IQ data field menu.
     //! @return [Menu2, Menu2InputDelegate]
     function getSettingsView() {
-        var menu = new RuuviMainMenu();
-        return [menu, new RuuviMainMenuDelegate(menu)];
+        return [new RuuviMainMenu(), new RuuviMainMenuDelegate()];
     }
 
     //! Called when settings are changed from Garmin Connect (store installs).

@@ -39,16 +39,17 @@ With several sensors in the list the field shows each for 3 seconds in turn.
    your sensors for ~20 seconds (it shows `NO SENSORS 2 found` while the list
    is empty). The field saves the tags it hears for the settings menu.
 2. Open the device's Connect IQ data field menu → **RuuviSensor → Settings**.
-3. **Add sensor** lists the tags heard recently (name, signal strength, how
-   long ago), excluding ones already added. Tap one to add it. Tags whose name
-   is not received are listed as `Ruuvi XXXX` (last 4 hex digits of the MAC).
-4. Tap a sensor in the main menu for:
+3. Open **Sensors**. **+ Add sensor** (at the top) lists the tags heard
+   recently (name, signal strength, how long ago), excluding ones already
+   added. Tap one to add it. Tags whose name is not received are listed as
+   `Ruuvi XXXX` (last 4 hex digits of the MAC).
+4. Your sensors are listed below **+ Add sensor**. Tap one for:
    - **Show** — Temperature, Humidity, Pressure or All.
    - **Rename** — the name shown as the field's header.
    - **Remove** — delete it from the list.
-5. **Temperature unit** (Device setting / °C / °F) and **Pressure unit**
-   (hPa / inHg / mmHg) apply to every sensor. *Device setting* follows the
-   Montana's own unit setting.
+5. Back in the main menu, **Temperature unit** (Device setting / °C / °F) and
+   **Pressure unit** (hPa / inHg / mmHg) apply to every sensor. *Device
+   setting* follows the Montana's own unit setting.
 
 On the Montana touchscreen the title-bar back arrow needs two taps (the first
 only highlights it).
