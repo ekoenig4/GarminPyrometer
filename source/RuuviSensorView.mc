@@ -13,7 +13,9 @@
 // The field is drawn by hand (DataField + onUpdate) so single readings use
 // the device's number fonts with the unit in a smaller font beside them, like
 // the native fields. The field shows the one sensor chosen under Display in
-// the settings menu (the first in the list if none is chosen).
+// the settings menu, or with "Nearest at startup" (the default) the listed
+// sensor with the strongest signal during the first NEAREST_WINDOW_MS of
+// scanning; that choice is kept until the field restarts.
 //
 import Toybox.Activity;
 import Toybox.Graphics;
@@ -30,6 +32,10 @@ class RuuviSensorView extends WatchUi.DataField {
 
     // Header when the list is empty.
     private const APP_LABEL = "RuuviSensor";
+
+    // "Nearest at startup": listen this long before choosing, then lock.
+    private const NEAREST_WINDOW_MS = 10000;
+    private const NEAREST_LABEL = "Nearest";
 
     // Value fonts, largest first. Number fonts only contain digits and a few
     // symbols, so they are used for plain numbers only. FONT_NUMBER_THAI_HOT
@@ -51,13 +57,18 @@ class RuuviSensorView extends WatchUi.DataField {
     private var mUnit as String = "";          // unit drawn after a numeric value
     private var mNumeric as Boolean = false;   // mValue is a plain number
 
+    // MAC locked in by "Nearest at startup" (null until chosen).
+    private var mNearestMac as String? = null;
+
     //! Constructor.
     function initialize() {
         DataField.initialize();
         var devices = RuuviConfig.loadDevices();
-        var idx = RuuviConfig.displayedIndex(devices, RuuviConfig.getActive());
+        var idx = RuuviConfig.findDevice(devices, RuuviConfig.getActive());
         if (idx >= 0) {
             mLabel = devices[idx][RuuviConfig.F_NAME] as String;
+        } else if (devices.size() > 0) {
+            mLabel = NEAREST_LABEL;
         }
     }
 
@@ -77,15 +88,24 @@ class RuuviSensorView extends WatchUi.DataField {
             scanner.tick();
 
             var devices = scanner.getDevices();
-            var idx = RuuviConfig.displayedIndex(devices, scanner.getActive());
-            if (idx < 0) {
+            if (devices.size() == 0) {
                 // Still scanning, so the settings menu can offer nearby tags.
                 mLabel = APP_LABEL;
                 setText("NO SENSORS " + scanner.getStatus());
                 return;
             }
 
-            // The sensor chosen under Display (else the first in the list).
+            // The sensor chosen under Display, else the nearest at startup.
+            var idx = RuuviConfig.findDevice(devices, scanner.getActive());
+            if (idx < 0) {
+                idx = nearestIndex(devices, scanner);
+                if (idx < 0) {
+                    mLabel = NEAREST_LABEL;
+                    setText("SCAN " + scanner.getStatus());
+                    return;
+                }
+            }
+
             var now = System.getTimer();
             var dev = devices[idx];
             var mac = dev[RuuviConfig.F_MAC] as String;
@@ -96,6 +116,32 @@ class RuuviSensorView extends WatchUi.DataField {
             System.println("RuuviSensor: compute error: " + e.getErrorMessage());
             setText("---");
         }
+    }
+
+    //! "Nearest at startup": after NEAREST_WINDOW_MS of scanning, locks onto
+    //! the listed sensor heard with the strongest signal (later, if none was
+    //! heard yet). The lock is by MAC and lasts until the field restarts.
+    //! @param devices Sensor list
+    //! @param scanner Scanner
+    //! @return Index of the locked sensor, or -1 while still choosing
+    private function nearestIndex(devices as Array<Array>, scanner as RuuviScanner) as Number {
+        var locked = mNearestMac;
+        if (locked != null) {
+            var idx = RuuviConfig.findDevice(devices, locked);
+            if (idx >= 0) {
+                return idx;
+            }
+            mNearestMac = null;   // removed from the list: choose again
+        }
+        if (scanner.scanAgeMs() < NEAREST_WINDOW_MS) {
+            return -1;
+        }
+        var nearest = scanner.getNearestIndex();
+        if (nearest >= 0) {
+            mNearestMac = devices[nearest][RuuviConfig.F_MAC] as String;
+            System.println("RuuviSensor: nearest sensor is " + devices[nearest][RuuviConfig.F_NAME]);
+        }
+        return nearest;
     }
 
     //! Draws the header at the top and the value in the largest font that

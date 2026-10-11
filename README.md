@@ -16,8 +16,10 @@ its own name and choice of what to show.
 | Pressure | `Balloon 1` | `1013 hPa` |
 | All | `Balloon 1` | `T:23.5 H:61 P:1013` |
 
-The field shows the one sensor chosen under **Display** in the settings menu
-(the first in the list until you choose one).
+The field shows the one sensor chosen under **Display** in the settings menu.
+With **Nearest at startup** (the default) it listens for 10 seconds when it
+starts, then shows the listed sensor with the strongest signal and stays on
+it until the field restarts.
 
 ## Layout
 
@@ -48,10 +50,10 @@ The field shows the one sensor chosen under **Display** in the settings menu
    - **Show** — Temperature, Humidity, Pressure or All.
    - **Rename** — the name shown as the field's header.
    - **Remove** — delete it from the list.
-5. Back in the main menu, **Display** picks the sensor the field shows.
-   The choice is saved, so the field keeps showing that sensor every time it
-   starts. Until you choose one, or after removing the displayed sensor, the
-   field shows the first sensor in the list.
+5. Back in the main menu, **Display** picks what the field shows:
+   **Nearest at startup** (default) or a specific sensor. The choice is
+   saved. Removing the displayed sensor falls back to Nearest at startup.
+   While choosing the nearest sensor the field shows `Nearest` / `SCAN …`.
 6. **Temperature unit** (Device setting / °C / °F) and
    **Pressure unit** (hPa / inHg / mmHg) apply to every sensor. *Device
    setting* follows the Montana's own unit setting.

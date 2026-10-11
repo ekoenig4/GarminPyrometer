@@ -6,7 +6,7 @@
 // variable-length list, so the sensor list is edited here. Menu tree:
 //
 //   RuuviSensor
-//   +-- Display           -> <sensor>: the one sensor the field shows
+//   +-- Display           -> Nearest at startup / <sensor>: what the field shows
 //   +-- Sensors           (own sub-menu so the list is clearly separate)
 //   |   +-- + Add sensor  -> Ruuvi tags recently heard by the data field
 //   |   +-- <sensor> ...  (one entry per listed sensor)
@@ -34,11 +34,10 @@ function sensorCountText() as String {
     return RuuviConfig.loadDevices().size() + " of " + RuuviConfig.MAX_DEVICES + " used";
 }
 
-//! @return Name of the displayed sensor, or "No sensors"
+//! @return Name of the displayed sensor, or "Nearest at startup"
 function displayText() as String {
-    var devices = RuuviConfig.loadDevices();
-    var idx = RuuviConfig.displayedIndex(devices, RuuviConfig.getActive());
-    return (idx >= 0) ? (devices[idx][RuuviConfig.F_NAME] as String) : "No sensors";
+    var dev = RuuviConfig.getDevice(RuuviConfig.getActive());
+    return (dev != null) ? (dev[RuuviConfig.F_NAME] as String) : "Nearest at startup";
 }
 
 //! Sub-label of a sensor's menu item, e.g. "Temperature, BBF3".
@@ -105,17 +104,15 @@ class RuuviMainMenuDelegate extends WatchUi.Menu2InputDelegate {
 
 class RuuviDisplayMenu extends WatchUi.Menu2 {
 
-    //! Every listed sensor (item id = MAC); the one shown is marked
-    //! "Selected".
+    //! "Nearest at startup", then every listed sensor (item id = MAC); the
+    //! current choice is marked "Selected".
     function initialize() {
         Menu2.initialize({ :title => "Display" });
         var devices = RuuviConfig.loadDevices();
-        var shown = RuuviConfig.displayedIndex(devices, RuuviConfig.getActive());
+        var shown = RuuviConfig.findDevice(devices, RuuviConfig.getActive());
 
-        if (devices.size() == 0) {
-            addItem(new WatchUi.MenuItem("No sensors", "Add one under Sensors", :none, null));
-            return;
-        }
+        addItem(new WatchUi.MenuItem("Nearest at startup",
+            (shown < 0) ? "Selected" : "Strongest signal", :nearest, null));
         for (var i = 0; i < devices.size(); i++) {
             var mac = devices[i][RuuviConfig.F_MAC] as String;
             var sub = (i == shown) ? "Selected" : RuuviConfig.formatMac(mac);
@@ -134,15 +131,13 @@ class RuuviDisplayMenuDelegate extends WatchUi.Menu2InputDelegate {
         mItem = item;
     }
 
-    //! Stores the chosen sensor and returns.
-    //! @param item Selected item (id = MAC, or :none when the list is empty)
+    //! Stores the choice ("" for Nearest at startup) and returns.
+    //! @param item Selected item (id = MAC or :nearest)
     function onSelect(item as WatchUi.MenuItem) as Void {
         var id = item.getId();
-        if (id instanceof String) {
-            RuuviConfig.setActive(id);
-            mItem.setSubLabel(displayText());
-            getApp().applySettings();
-        }
+        RuuviConfig.setActive((id instanceof String) ? id : "");
+        mItem.setSubLabel(displayText());
+        getApp().applySettings();
         WatchUi.popView(WatchUi.SLIDE_RIGHT);
     }
 }
