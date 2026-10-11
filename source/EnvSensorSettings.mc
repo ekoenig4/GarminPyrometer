@@ -9,6 +9,7 @@
 //   +-- Device 1 / 2 / 3
 //       +-- Choose sensor    -> nearby BLE devices last heard by the data field
 //       +-- Auto connect     -> "*": any sensor advertising the service UUID
+//       +-- Show             -> All / Temperature / Humidity / Pressure
 //       +-- Rename           -> on-screen keyboard (if the product has one)
 //       +-- Turn off         -> clears the slot
 //
@@ -55,6 +56,47 @@ module EnvSettings {
         writeString("Device" + (slot + 1) + "DisplayName", name);
     }
 
+    //! @param slot Slot index (0-based)
+    //! @return Stored quantity to show (EnvDeviceState.SHOW_*), default All
+    function getShow(slot as Number) as Number {
+        try {
+            var value = Application.Properties.getValue("Device" + (slot + 1) + "Show");
+            if (value instanceof Number) {
+                return value as Number;
+            }
+        } catch (e) {
+            System.println("RuuviSensor: missing property Device" + (slot + 1) + "Show");
+        }
+        return EnvDeviceState.SHOW_ALL;
+    }
+
+    //! Stores the quantity to show and applies the configuration.
+    //! @param slot Slot index (0-based)
+    //! @param show EnvDeviceState.SHOW_* value
+    function setShow(slot as Number, show as Number) as Void {
+        try {
+            Application.Properties.setValue("Device" + (slot + 1) + "Show", show);
+        } catch (e) {
+            System.println("RuuviSensor: cannot save Show: " + e.getErrorMessage());
+        }
+        getApp().applySettings();
+    }
+
+    //! @param show EnvDeviceState.SHOW_* value
+    //! @return Menu label for it
+    function describeShow(show as Number) as String {
+        if (show == EnvDeviceState.SHOW_TEMPERATURE) {
+            return "Temperature";
+        }
+        if (show == EnvDeviceState.SHOW_HUMIDITY) {
+            return "Humidity";
+        }
+        if (show == EnvDeviceState.SHOW_PRESSURE) {
+            return "Pressure";
+        }
+        return "All";
+    }
+
     //! Human readable form of a BLE id for menu sub-labels.
     //! @param id Stored BLE id
     //! @return "Off", "Auto (any sensor)" or the name itself
@@ -89,7 +131,7 @@ module EnvSettings {
                 return EnvSensorUtil.trim(value.toString());
             }
         } catch (e) {
-            System.println("EnvSensor: missing property " + key);
+            System.println("RuuviSensor: missing property " + key);
         }
         return "";
     }
@@ -101,7 +143,7 @@ module EnvSettings {
         try {
             Application.Properties.setValue(key, value);
         } catch (e) {
-            System.println("EnvSensor: cannot save " + key + ": " + e.getErrorMessage());
+            System.println("RuuviSensor: cannot save " + key + ": " + e.getErrorMessage());
         }
         getApp().applySettings();
     }
@@ -115,7 +157,7 @@ class EnvSettingsMenu extends WatchUi.Menu2 {
 
     //! Builds the main menu with one item per device slot.
     function initialize() {
-        Menu2.initialize({ :title => "EnvSensor" });
+        Menu2.initialize({ :title => "RuuviSensor" });
         for (var i = 0; i < EnvSensorApp.MAX_DEVICES; i++) {
             addItem(new WatchUi.MenuItem("Device " + (i + 1), EnvSettings.describeSlot(i), i, null));
         }
@@ -148,6 +190,7 @@ class EnvDeviceMenu extends WatchUi.Menu2 {
         Menu2.initialize({ :title => "Device " + (slot + 1) });
         addItem(new WatchUi.MenuItem("Choose sensor", EnvSettings.describeBleId(EnvSettings.getBleId(slot)), :choose, null));
         addItem(new WatchUi.MenuItem("Auto connect", "Any sensor with the service", :auto, null));
+        addItem(new WatchUi.MenuItem("Show", EnvSettings.describeShow(EnvSettings.getShow(slot)), :show, null));
         if (WatchUi has :TextPicker) {
             addItem(new WatchUi.MenuItem("Rename", EnvSettings.getDisplayName(slot), :rename, null));
         }
@@ -178,6 +221,8 @@ class EnvDeviceMenuDelegate extends WatchUi.Menu2InputDelegate {
         } else if (id == :auto) {
             EnvSettings.setBleId(mSlot, EnvSensorBleDelegate.WILDCARD_ID);
             finish();
+        } else if (id == :show) {
+            WatchUi.pushView(new EnvShowMenu(mSlot), new EnvShowMenuDelegate(mSlot, item), WatchUi.SLIDE_LEFT);
         } else if (id == :rename) {
             WatchUi.pushView(new WatchUi.TextPicker(EnvSettings.getDisplayName(mSlot)),
                 new EnvRenameDelegate(mSlot, item, mParentItem), WatchUi.SLIDE_LEFT);
@@ -190,6 +235,48 @@ class EnvDeviceMenuDelegate extends WatchUi.Menu2InputDelegate {
     //! Refreshes the main menu entry and returns to it.
     private function finish() as Void {
         mParentItem.setSubLabel(EnvSettings.describeSlot(mSlot));
+        WatchUi.popView(WatchUi.SLIDE_RIGHT);
+    }
+}
+
+// -------------------------------------------------------------------------
+// Show menu: which quantity the data field displays for a device
+// -------------------------------------------------------------------------
+
+class EnvShowMenu extends WatchUi.Menu2 {
+
+    //! @param slot Slot index (0-based)
+    function initialize(slot as Number) {
+        Menu2.initialize({ :title => "Show" });
+        var current = EnvSettings.getShow(slot);
+        var choices = [EnvDeviceState.SHOW_ALL, EnvDeviceState.SHOW_TEMPERATURE,
+                       EnvDeviceState.SHOW_HUMIDITY, EnvDeviceState.SHOW_PRESSURE];
+        for (var i = 0; i < choices.size(); i++) {
+            var sub = (choices[i] == current) ? "Selected" : null;
+            addItem(new WatchUi.MenuItem(EnvSettings.describeShow(choices[i]), sub, choices[i], null));
+        }
+    }
+}
+
+class EnvShowMenuDelegate extends WatchUi.Menu2InputDelegate {
+
+    private var mSlot as Number;
+    private var mDeviceItem as WatchUi.MenuItem;   // "Show" item to refresh
+
+    //! @param slot       Slot index (0-based)
+    //! @param deviceItem "Show" item in the device menu
+    function initialize(slot as Number, deviceItem as WatchUi.MenuItem) {
+        Menu2InputDelegate.initialize();
+        mSlot = slot;
+        mDeviceItem = deviceItem;
+    }
+
+    //! Stores the chosen quantity and returns to the device menu.
+    //! @param item Selected item (id = EnvDeviceState.SHOW_* value)
+    function onSelect(item as WatchUi.MenuItem) as Void {
+        var show = item.getId() as Number;
+        EnvSettings.setShow(mSlot, show);
+        mDeviceItem.setSubLabel(EnvSettings.describeShow(show));
         WatchUi.popView(WatchUi.SLIDE_RIGHT);
     }
 }
@@ -211,7 +298,7 @@ class EnvPickerMenu extends WatchUi.Menu2 {
         try {
             raw = Application.Storage.getValue(EnvSensorBleDelegate.NEARBY_KEY);
         } catch (e) {
-            System.println("EnvSensor: cannot read nearby list: " + e.getErrorMessage());
+            System.println("RuuviSensor: cannot read nearby list: " + e.getErrorMessage());
         }
 
         var now = Time.now().value();

@@ -1,7 +1,7 @@
 //
 // EnvSensorApp.mc
 //
-// Application entry point for the EnvSensor BLE data field.
+// Application entry point for the RuuviSensor data field.
 //
 // Responsibilities:
 //   * Create the BLE delegate and register it with the BLE subsystem.
@@ -72,12 +72,12 @@ class EnvSensorApp extends Application.AppBase {
     //! (or Garmin Express) while the data field is running. Re-reads every
     //! property and pushes the new scan filter list / UUIDs to the delegate.
     function onSettingsChanged() as Void {
-        System.println("EnvSensor: settings changed");
+        System.println("RuuviSensor: settings changed");
         applySettings();
     }
 
     //! Returns the on-device settings menu. On the device this is reached from
-    //! the Connect IQ / data field menu ("Settings" under EnvSensor BLE). It is
+    //! the Connect IQ / data field menu ("Settings" under RuuviSensor). It is
     //! the only way to configure a side-loaded (USB) install, because Garmin
     //! Connect shows app settings only for store installs. The sensor list it
     //! offers comes from Application.Storage, written by the data field.
@@ -96,7 +96,7 @@ class EnvSensorApp extends Application.AppBase {
             try {
                 delegate.applyConfig(readConfig());
             } catch (e) {
-                System.println("EnvSensor: failed to apply settings: " + e.getErrorMessage());
+                System.println("RuuviSensor: failed to apply settings: " + e.getErrorMessage());
             }
         }
 
@@ -129,7 +129,7 @@ class EnvSensorApp extends Application.AppBase {
         }
         var hasBle = (Toybox has :BluetoothLowEnergy);
         if (hasBle == false) {
-            System.println("EnvSensor: BluetoothLowEnergy not supported on this product");
+            System.println("RuuviSensor: BluetoothLowEnergy not supported on this product");
             return;
         }
         try {
@@ -138,19 +138,21 @@ class EnvSensorApp extends Application.AppBase {
             mBleDelegate = delegate;
             delegate.applyConfig(readConfig());
         } catch (e) {
-            System.println("EnvSensor: BLE start failed: " + e.getErrorMessage());
+            System.println("RuuviSensor: BLE start failed: " + e.getErrorMessage());
         }
     }
 
     //! Reads all user settings into a plain configuration dictionary:
     //!   :bleIds       => Array<String>  (MAX_DEVICES entries, "" = slot disabled)
     //!   :displayNames => Array<String>  (MAX_DEVICES entries, never empty)
+    //!   :show         => Array<Number>  (MAX_DEVICES entries, EnvDeviceState.SHOW_*)
     //!   :serviceUuid  => String         ("" = use Nordic UART default)
     //!   :charUuid     => String         ("" = use Nordic UART TX default)
     //! @return Configuration dictionary
     private function readConfig() as Dictionary {
         var bleIds = new [MAX_DEVICES];
         var names = new [MAX_DEVICES];
+        var shows = new [MAX_DEVICES];
 
         for (var i = 0; i < MAX_DEVICES; i++) {
             var n = i + 1;
@@ -159,11 +161,13 @@ class EnvSensorApp extends Application.AppBase {
             var name = readStringProperty("Device" + n + "DisplayName");
             // Fall back to a generic label so the screen is never blank.
             names[i] = (name.length() > 0) ? name : ("Sensor " + n);
+            shows[i] = EnvSettings.getShow(i);
         }
 
         return {
             :bleIds       => bleIds,
             :displayNames => names,
+            :show         => shows,
             :serviceUuid  => readStringProperty("CustomServiceUuid"),
             :charUuid     => readStringProperty("CustomCharUuid")
         };
@@ -180,7 +184,7 @@ class EnvSensorApp extends Application.AppBase {
             value = Application.Properties.getValue(key);
         } catch (e) {
             // InvalidKeyException: property missing (e.g. stale settings).
-            System.println("EnvSensor: missing property " + key);
+            System.println("RuuviSensor: missing property " + key);
         }
 
         if (value == null) {

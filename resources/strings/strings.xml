@@ -1,6 +1,6 @@
 <strings>
     <!-- Application name -->
-    <string id="AppName">EnvSensor BLE</string>
+    <string id="AppName">RuuviSensor</string>
 
     <!-- Settings panel titles -->
     <string id="Device1BleIdTitle">Device 1 BLE name</string>
@@ -9,6 +9,13 @@
     <string id="Device2DisplayNameTitle">Device 2 display name</string>
     <string id="Device3BleIdTitle">Device 3 BLE name</string>
     <string id="Device3DisplayNameTitle">Device 3 display name</string>
+    <string id="Device1ShowTitle">Device 1 shows</string>
+    <string id="Device2ShowTitle">Device 2 shows</string>
+    <string id="Device3ShowTitle">Device 3 shows</string>
+    <string id="ShowAll">All (T, H, P)</string>
+    <string id="ShowTemperature">Temperature</string>
+    <string id="ShowHumidity">Humidity</string>
+    <string id="ShowPressure">Pressure</string>
     <string id="CustomServiceUuidTitle">Custom service UUID (blank = Nordic UART)</string>
     <string id="CustomCharUuidTitle">Custom data characteristic UUID (blank = Nordic UART TX)</string>
 

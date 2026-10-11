@@ -1,14 +1,18 @@
 //
 // EnvSensorView.mc
 //
-// SimpleDataField that shows temperature, humidity and pressure from the
-// configured BLE sensors. A simple data field renders a single value, so when
-// several devices are configured the view rotates through them every
-// ROTATE_INTERVAL_MS, e.g.:
+// SimpleDataField that shows temperature, humidity and/or pressure from the
+// configured BLE sensors. The field's label (header) is the device's display
+// name and the value is the quantity chosen in that device's "Show" setting:
 //
-//     Balloon 1 | T:23.5 H:61 P:1013
-//     Balloon 2 | SCAN
-//     Balloon 3 | ---
+//     header      value
+//     Balloon 1   T:23.5 H:61 P:1013     (Show = All)
+//     Balloon 1   23.5°C                 (Show = Temperature)
+//     Balloon 2   SCAN 5 dev RUUVI
+//     Balloon 3   ---
+//
+// A simple data field renders a single value, so when several devices are
+// configured the view rotates through them every ROTATE_INTERVAL_MS.
 //
 import Toybox.Activity;
 import Toybox.Lang;
@@ -23,6 +27,9 @@ class EnvSensorView extends WatchUi.SimpleDataField {
     // Readings older than this are flagged with "?" (sensor went quiet).
     private const STALE_DATA_MS = 30000;
 
+    // Header when no device is configured.
+    private const APP_LABEL = "RuuviSensor";
+
     // BLE delegate, obtained from the app once BLE has started.
     private var mBle as EnvSensorBleDelegate?;
 
@@ -35,8 +42,20 @@ class EnvSensorView extends WatchUi.SimpleDataField {
     //! Constructor.
     function initialize() {
         SimpleDataField.initialize();
-        label = "ENV DATA";
+        label = initialLabel();
         mLastRotateMs = System.getTimer();
+    }
+
+    //! Header before BLE starts: the first configured device's display name
+    //! (some products only read the label once, at start-up).
+    //! @return Label text
+    private function initialLabel() as String {
+        for (var i = 0; i < EnvSensorApp.MAX_DEVICES; i++) {
+            if (EnvSettings.getBleId(i).length() > 0) {
+                return EnvSettings.getDisplayName(i);
+            }
+        }
+        return APP_LABEL;
     }
 
     //! Called once per second by the activity. Drives BLE housekeeping and
@@ -60,12 +79,14 @@ class EnvSensorView extends WatchUi.SimpleDataField {
             var active = selectActiveSlot(slots);
             if (active == null) {
                 // Still scanning, so the settings menu can list nearby devices.
+                label = APP_LABEL;
                 return "NO SENSORS " + ble.getScanStatus();
             }
+            label = active.displayName;
             return formatSlot(active);
         } catch (e) {
             // Never let a display problem crash the data field.
-            System.println("EnvSensor: compute error: " + e.getErrorMessage());
+            System.println("RuuviSensor: compute error: " + e.getErrorMessage());
             return "---";
         }
     }
@@ -103,37 +124,43 @@ class EnvSensorView extends WatchUi.SimpleDataField {
         return null;
     }
 
-    //! Formats one device as "<name> | <values>".
+    //! Formats the value for one device (its name is in the header).
     //!   SCAN <status>   : searching / pairing, never connected since config;
     //!                     <status> is EnvSensorBleDelegate.getScanStatus()
-    //!   ---             : link lost (auto-reconnect in progress)
+    //!   ---             : link lost / broadcasts stopped
     //!   WAIT            : connected, first packet not received yet
-    //!   T:x H:y P:z     : latest readings ("?" suffix when stale)
+    //!   readings        : per the device's Show setting ("?" suffix when stale)
     //! @param slot Device state
     //! @return Display string
     private function formatSlot(slot as EnvDeviceState) as String {
-        var prefix = slot.displayName + " | ";
-
         if (slot.state == EnvDeviceState.STATE_SCANNING) {
             var ble = mBle;
-            return prefix + "SCAN" + ((ble != null) ? (" " + ble.getScanStatus()) : "");
+            return "SCAN" + ((ble != null) ? (" " + ble.getScanStatus()) : "");
         }
         if (slot.state != EnvDeviceState.STATE_CONNECTED) {
-            // Unavailable (or any unexpected state): configured but no link.
-            return prefix + "---";
+            // Unavailable (or any unexpected state): configured but no data.
+            return "---";
         }
 
         var t = slot.temperature;
         var h = slot.humidity;
         var p = slot.pressure;
         if (t == null || h == null || p == null) {
-            return prefix + "WAIT";
+            return "WAIT";
         }
 
-        var text = prefix
-            + "T:" + t.format("%.1f")
-            + " H:" + h.format("%.0f")
-            + " P:" + p.format("%.0f");
+        var text;
+        if (slot.show == EnvDeviceState.SHOW_TEMPERATURE) {
+            text = t.format("%.1f") + "°C";
+        } else if (slot.show == EnvDeviceState.SHOW_HUMIDITY) {
+            text = h.format("%.0f") + "%RH";
+        } else if (slot.show == EnvDeviceState.SHOW_PRESSURE) {
+            text = p.format("%.0f") + " hPa";
+        } else {
+            text = "T:" + t.format("%.1f")
+                + " H:" + h.format("%.0f")
+                + " P:" + p.format("%.0f");
+        }
 
         if ((System.getTimer() - slot.lastDataMs) > STALE_DATA_MS) {
             text += "?";

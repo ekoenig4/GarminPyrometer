@@ -46,8 +46,17 @@ class EnvDeviceState {
         STATE_UNAVAILABLE   // Was connected, link lost; reconnecting
     }
 
+    // Which quantity the data field shows for this device.
+    enum {
+        SHOW_ALL,           // "T:20.3 H:37 P:795"
+        SHOW_TEMPERATURE,   // "20.3°C"
+        SHOW_HUMIDITY,      // "37%RH"
+        SHOW_PRESSURE       // "795 hPa"
+    }
+
     public var bleId as String = "";        // Advertised name to match
     public var displayName as String = "";  // Label shown on screen
+    public var show as Number = SHOW_ALL;   // One of the SHOW_* values
     public var state as Number = STATE_DISABLED;
 
     // Last known good readings (null until the first valid packet).
@@ -215,6 +224,7 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
     function applyConfig(config as Dictionary) as Void {
         var bleIds = config[:bleIds] as Array<String>;
         var names = config[:displayNames] as Array<String>;
+        var shows = config[:show] as Array<Number>;
 
         // ---- Resolve UUIDs, falling back to Nordic UART on bad input ----
         var svc = parseUuid(config[:serviceUuid] as String, DEFAULT_SERVICE_UUID);
@@ -258,6 +268,10 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
                 slot.displayName = newName;
             }
 
+            var show = (i < shows.size() && shows[i] != null) ? shows[i] : EnvDeviceState.SHOW_ALL;
+            slot.show = (show >= EnvDeviceState.SHOW_ALL && show <= EnvDeviceState.SHOW_PRESSURE)
+                ? show : EnvDeviceState.SHOW_ALL;
+
             if (slot.isEnabled()) {
                 mStateByName[slot.displayName] = slot;
             }
@@ -275,10 +289,10 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
         if (!mEnded && mProfileRequested && !mProfileReady && !mProfileFailed
                 && (now - mProfileRequestMs) > PROFILE_RETRY_MS) {
             if (mProfileAttempts < PROFILE_MAX_ATTEMPTS) {
-                System.println("EnvSensor: no profile confirmation, retrying");
+                System.println("RuuviSensor: no profile confirmation, retrying");
                 registerProfile();
             } else {
-                System.println("EnvSensor: profile never confirmed, giving up");
+                System.println("RuuviSensor: profile never confirmed, giving up");
                 mProfileFailed = true;
             }
         }
@@ -291,7 +305,7 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
 
         // ---- Stuck GATT request: drop it and move on ----
         if (mRequestSlot >= 0 && (now - mRequestStartMs) > REQUEST_TIMEOUT_MS) {
-            System.println("EnvSensor: GATT request timed out (slot " + mRequestSlot + ")");
+            System.println("RuuviSensor: GATT request timed out (slot " + mRequestSlot + ")");
             var stuck = mRequestSlot;
             mRequestSlot = -1;
             // Retry once the queue drains, if the device is still up.
@@ -307,7 +321,7 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
             // ---- Pairing never produced a connection ----
             if (slot.pairStartMs != 0 && slot.state != EnvDeviceState.STATE_CONNECTED
                     && (now - slot.pairStartMs) > PAIR_TIMEOUT_MS) {
-                System.println("EnvSensor: pairing timeout for " + slot.displayName);
+                System.println("RuuviSensor: pairing timeout for " + slot.displayName);
                 var keepState = slot.state;
                 releaseSlot(i);
                 slot.setState(keepState);
@@ -316,14 +330,14 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
             // ---- Broadcaster went quiet: show "---" until it is heard again ----
             if (slot.advertMode && slot.state == EnvDeviceState.STATE_CONNECTED
                     && (now - slot.lastDataMs) > ADVERT_LOST_MS) {
-                System.println("EnvSensor: no broadcasts from " + slot.displayName);
+                System.println("RuuviSensor: no broadcasts from " + slot.displayName);
                 slot.setState(EnvDeviceState.STATE_UNAVAILABLE);
             }
 
             // ---- Lost link that the system failed to restore: start over ----
             if (slot.state == EnvDeviceState.STATE_UNAVAILABLE && slot.device != null
                     && (now - slot.stateSinceMs) > RECONNECT_TIMEOUT_MS) {
-                System.println("EnvSensor: reconnect timeout for " + slot.displayName + ", rescanning");
+                System.println("RuuviSensor: reconnect timeout for " + slot.displayName + ", rescanning");
                 releaseSlot(i);
                 // Stay "unavailable" (shows ---) while we rescan for it.
                 slot.setState(EnvDeviceState.STATE_UNAVAILABLE);
@@ -449,7 +463,7 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
         try {
             Application.Storage.setValue(NEARBY_KEY, rows);
         } catch (e) {
-            System.println("EnvSensor: cannot save nearby list: " + e.getErrorMessage());
+            System.println("RuuviSensor: cannot save nearby list: " + e.getErrorMessage());
         }
     }
 
@@ -475,7 +489,7 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
     //! @param status Ble.STATUS_SUCCESS on success
     function onProfileRegister(uuid as Ble.Uuid, status as Ble.Status) as Void {
         if (status == Ble.STATUS_SUCCESS) {
-            System.println("EnvSensor: profile registered " + uuid.toString());
+            System.println("RuuviSensor: profile registered " + uuid.toString());
             var key = uuid.toString();
             if (mRegisteredProfiles.indexOf(key) < 0) {
                 mRegisteredProfiles.add(key);
@@ -484,7 +498,7 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
                 mProfileReady = true;
             }
         } else {
-            System.println("EnvSensor: profile registration failed, status " + status);
+            System.println("RuuviSensor: profile registration failed, status " + status);
             mProfileFailed = true;
         }
         updateScanState();
@@ -498,7 +512,7 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
         if (status == Ble.STATUS_SUCCESS) {
             mScanError = null;
         } else {
-            System.println("EnvSensor: scan state change failed, status " + status);
+            System.println("RuuviSensor: scan state change failed, status " + status);
             mScanError = "SCAN ERR " + status;
         }
     }
@@ -584,7 +598,7 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
         var slot = mSlots[idx];
 
         if (state == Ble.CONNECTION_STATE_CONNECTED) {
-            System.println("EnvSensor: connected " + slot.displayName);
+            System.println("RuuviSensor: connected " + slot.displayName);
             slot.setState(EnvDeviceState.STATE_CONNECTED);
             slot.pairStartMs = 0;
             slot.notifying = false;
@@ -593,7 +607,7 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
             }
             registerNotify(idx);
         } else {
-            System.println("EnvSensor: disconnected " + slot.displayName);
+            System.println("RuuviSensor: disconnected " + slot.displayName);
             slot.notifying = false;
             // Only flip connected/scanning slots; pairing timeouts handle the rest.
             if (slot.state == EnvDeviceState.STATE_CONNECTED) {
@@ -620,9 +634,9 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
         if (idx >= 0 && idx < mSlots.size()) {
             if (status == Ble.STATUS_SUCCESS) {
                 mSlots[idx].notifying = true;
-                System.println("EnvSensor: notifications enabled for " + mSlots[idx].displayName);
+                System.println("RuuviSensor: notifications enabled for " + mSlots[idx].displayName);
             } else {
-                System.println("EnvSensor: CCCD write failed (" + status + ") for " + mSlots[idx].displayName);
+                System.println("RuuviSensor: CCCD write failed (" + status + ") for " + mSlots[idx].displayName);
                 // Retry later while the link is still up.
                 if (mSlots[idx].state == EnvDeviceState.STATE_CONNECTED) {
                     mNotifyQueue.add(idx);
@@ -640,7 +654,7 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
         try {
             device = characteristic.getService().getDevice();
         } catch (e) {
-            System.println("EnvSensor: cannot resolve notification source");
+            System.println("RuuviSensor: cannot resolve notification source");
             return;
         }
 
@@ -672,7 +686,7 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
     private function parsePayload(slot as EnvDeviceState, value as Lang.ByteArray?) as Void {
         try {
             if (value == null || value.size() == 0) {
-                System.println("EnvSensor: empty payload from " + slot.displayName);
+                System.println("RuuviSensor: empty payload from " + slot.displayName);
                 return;
             }
 
@@ -686,14 +700,14 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
                 }
             }
             if (bytes.size() == 0) {
-                System.println("EnvSensor: payload had no printable data from " + slot.displayName);
+                System.println("RuuviSensor: payload had no printable data from " + slot.displayName);
                 return;
             }
 
             var text = StringUtil.utf8ArrayToString(bytes);
             var fields = EnvSensorUtil.split(text, ",");
             if (fields.size() != 3) {
-                System.println("EnvSensor: malformed payload '" + text + "' from " + slot.displayName);
+                System.println("RuuviSensor: malformed payload '" + text + "' from " + slot.displayName);
                 return;
             }
 
@@ -702,12 +716,12 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
             var p = EnvSensorUtil.trim(fields[2]).toFloat();
 
             if (t == null || h == null || p == null) {
-                System.println("EnvSensor: non-numeric field in '" + text + "' from " + slot.displayName);
+                System.println("RuuviSensor: non-numeric field in '" + text + "' from " + slot.displayName);
                 return;
             }
             if (t < TEMP_MIN || t > TEMP_MAX || h < HUM_MIN || h > HUM_MAX
                     || p < PRES_MIN || p > PRES_MAX) {
-                System.println("EnvSensor: out-of-range values in '" + text + "' from " + slot.displayName);
+                System.println("RuuviSensor: out-of-range values in '" + text + "' from " + slot.displayName);
                 return;
             }
 
@@ -717,7 +731,7 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
             slot.pressure = p;
             slot.lastDataMs = System.getTimer();
         } catch (e) {
-            System.println("EnvSensor: parse error from " + slot.displayName + ": " + e.getErrorMessage());
+            System.println("RuuviSensor: parse error from " + slot.displayName + ": " + e.getErrorMessage());
         }
     }
 
@@ -735,7 +749,7 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
             try {
                 return Ble.stringToUuid(text);
             } catch (e) {
-                System.println("EnvSensor: invalid UUID '" + text + "', using default");
+                System.println("RuuviSensor: invalid UUID '" + text + "', using default");
             }
         }
         return Ble.stringToUuid(fallback);
@@ -772,7 +786,7 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
             Ble.registerProfile(profile);
         } catch (e) {
             // ProfileRegistrationException: e.g. three profiles already used.
-            System.println("EnvSensor: registerProfile failed: " + e.getErrorMessage());
+            System.println("RuuviSensor: registerProfile failed: " + e.getErrorMessage());
             mProfileFailed = true;
         }
     }
@@ -783,7 +797,7 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
     //! @param result Matching scan result
     private function pairSlot(idx as Number, result as Ble.ScanResult) as Void {
         var slot = mSlots[idx];
-        System.println("EnvSensor: pairing " + slot.bleId + " -> " + slot.displayName);
+        System.println("RuuviSensor: pairing " + slot.bleId + " -> " + slot.displayName);
 
         setScanning(false);
         try {
@@ -799,7 +813,7 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
                 }
             }
         } catch (e) {
-            System.println("EnvSensor: pairDevice failed: " + e.getErrorMessage());
+            System.println("RuuviSensor: pairDevice failed: " + e.getErrorMessage());
             slot.device = null;
             slot.scanResult = null;
             slot.pairStartMs = 0;
@@ -834,7 +848,7 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
 
             var cccd = findCccd(device);
             if (cccd == null) {
-                System.println("EnvSensor: service/characteristic not found on " + slot.displayName
+                System.println("RuuviSensor: service/characteristic not found on " + slot.displayName
                     + " - check the UUID settings");
                 continue;
             }
@@ -845,7 +859,7 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
                 mRequestStartMs = System.getTimer();
             } catch (e) {
                 // DeviceRequestException etc.; tick() / reconnect will retry.
-                System.println("EnvSensor: CCCD write rejected: " + e.getErrorMessage());
+                System.println("RuuviSensor: CCCD write rejected: " + e.getErrorMessage());
             }
         }
     }
@@ -881,7 +895,7 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
             try {
                 Ble.unpairDevice(device);
             } catch (e) {
-                System.println("EnvSensor: unpair failed: " + e.getErrorMessage());
+                System.println("RuuviSensor: unpair failed: " + e.getErrorMessage());
             }
         }
         slot.device = null;
@@ -1088,7 +1102,7 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
     private function applyRuuvi(idx as Number, mac as String, vals as Array) as Void {
         var slot = mSlots[idx];
         if (slot.boundMac == null) {
-            System.println("EnvSensor: " + slot.displayName + " bound to Ruuvi " + mac);
+            System.println("RuuviSensor: " + slot.displayName + " bound to Ruuvi " + mac);
         }
         slot.boundMac = mac;
         slot.advertMode = true;
@@ -1252,7 +1266,7 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
         }
 
         if (oldest >= 0) {
-            System.println("EnvSensor: cycling out " + mSlots[oldest].displayName);
+            System.println("RuuviSensor: cycling out " + mSlots[oldest].displayName);
             releaseSlot(oldest);
             // Give the waiting devices a chance before this one re-pairs.
             mSlots[oldest].cooldownUntilMs = now + CYCLE_INTERVAL_MS;
@@ -1281,7 +1295,7 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
             // Optimistic; onScanStateChange() confirms the real state.
             mScanning = on;
         } catch (e) {
-            System.println("EnvSensor: setScanState failed: " + e.getErrorMessage());
+            System.println("RuuviSensor: setScanState failed: " + e.getErrorMessage());
             mScanError = "SCAN ERR";
         }
     }

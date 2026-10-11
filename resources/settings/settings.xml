@@ -12,6 +12,14 @@
     <setting propertyKey="@Properties.Device1DisplayName" title="@Strings.Device1DisplayNameTitle" prompt="@Strings.DisplayNamePrompt">
         <settingConfig type="alphaNumeric"/>
     </setting>
+    <setting propertyKey="@Properties.Device1Show" title="@Strings.Device1ShowTitle">
+        <settingConfig type="list">
+            <listEntry value="0">@Strings.ShowAll</listEntry>
+            <listEntry value="1">@Strings.ShowTemperature</listEntry>
+            <listEntry value="2">@Strings.ShowHumidity</listEntry>
+            <listEntry value="3">@Strings.ShowPressure</listEntry>
+        </settingConfig>
+    </setting>
 
     <!-- Device 2 -->
     <setting propertyKey="@Properties.Device2BleId" title="@Strings.Device2BleIdTitle" prompt="@Strings.BleIdPrompt">
@@ -20,6 +28,14 @@
     <setting propertyKey="@Properties.Device2DisplayName" title="@Strings.Device2DisplayNameTitle" prompt="@Strings.DisplayNamePrompt">
         <settingConfig type="alphaNumeric"/>
     </setting>
+    <setting propertyKey="@Properties.Device2Show" title="@Strings.Device2ShowTitle">
+        <settingConfig type="list">
+            <listEntry value="0">@Strings.ShowAll</listEntry>
+            <listEntry value="1">@Strings.ShowTemperature</listEntry>
+            <listEntry value="2">@Strings.ShowHumidity</listEntry>
+            <listEntry value="3">@Strings.ShowPressure</listEntry>
+        </settingConfig>
+    </setting>
 
     <!-- Device 3 -->
     <setting propertyKey="@Properties.Device3BleId" title="@Strings.Device3BleIdTitle" prompt="@Strings.BleIdPrompt">
@@ -27,6 +43,14 @@
     </setting>
     <setting propertyKey="@Properties.Device3DisplayName" title="@Strings.Device3DisplayNameTitle" prompt="@Strings.DisplayNamePrompt">
         <settingConfig type="alphaNumeric"/>
+    </setting>
+    <setting propertyKey="@Properties.Device3Show" title="@Strings.Device3ShowTitle">
+        <settingConfig type="list">
+            <listEntry value="0">@Strings.ShowAll</listEntry>
+            <listEntry value="1">@Strings.ShowTemperature</listEntry>
+            <listEntry value="2">@Strings.ShowHumidity</listEntry>
+            <listEntry value="3">@Strings.ShowPressure</listEntry>
+        </settingConfig>
     </setting>
 
     <!-- Alternative sensor brands -->

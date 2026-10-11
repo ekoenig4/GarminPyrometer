@@ -1,12 +1,17 @@
-# EnvSensor BLE — Garmin Connect IQ data field
+# RuuviSensor — Garmin Connect IQ data field
 
 A `SimpleDataField` for the Garmin Montana 700 series (`montana7xx`, Connect IQ
 API 3.2.0+) that connects to up to three BLE environmental sensors and shows
-temperature, relative humidity and barometric pressure, for example:
+temperature, relative humidity and barometric pressure. The field's header is
+the device's display name; the value is the quantity chosen in its **Show**
+setting:
 
-```
-Balloon 1 | T:23.5 H:61 P:1013
-```
+| Show | Header | Value |
+| --- | --- | --- |
+| All | `Balloon 1` | `T:23.5 H:61 P:1013` |
+| Temperature | `Balloon 1` | `23.5°C` |
+| Humidity | `Balloon 1` | `61%RH` |
+| Pressure | `Balloon 1` | `1013 hPa` |
 
 ## Layout
 
@@ -27,8 +32,8 @@ Balloon 1 | T:23.5 H:61 P:1013
 ### On the device (USB / side-loaded installs)
 
 Garmin Connect only shows app settings for store installs. For a side-loaded
-`.prg`, open the device's Connect IQ / data field menu, select **EnvSensor
-BLE → Settings**, then for each device:
+`.prg`, open the device's Connect IQ / data field menu, select **RuuviSensor →
+Settings**, then for each device:
 
 - **Choose sensor** — lists nearby BLE devices by name, signal strength and
   how long ago they were heard. The menu itself does not use Bluetooth: the
@@ -38,13 +43,16 @@ BLE → Settings**, then for each device:
   auto connect.
 - **Auto connect** — stores `*`: connect to any sensor advertising the service
   UUID (Nordic UART by default). This is the default for Device 1.
-- **Rename** — sets the display name (needs an on-screen keyboard).
+- **Show** — which quantity the field displays: All, Temperature, Humidity
+  or Pressure.
+- **Rename** — sets the display name shown as the field's header (needs an
+  on-screen keyboard).
 - **Turn off** — disables the slot.
 
 **Known Montana issue:** after the on-device settings menu closes, the
 firmware does not restart the data field: it shows the app icon, and the
 settings menu will not open again. Re-add the data field (pick
-EnvSensor BLE for that field again) or restart the Montana. The app never
+RuuviSensor for that field again) or restart the Montana. The app never
 gets control at that point, so this cannot be fixed in app code; set
 Device 1 to *Auto connect* once and the field finds the sensor by itself on
 every start, or install from the Connect IQ store (beta is fine) and
@@ -56,7 +64,8 @@ this problem.
 | Property | Meaning |
 | --- | --- |
 | `Device1BleId` … `Device3BleId` | Advertised BLE name to match (case-insensitive). `*` = any sensor advertising the service UUID. Blank disables the slot. |
-| `Device1DisplayName` … `Device3DisplayName` | Label shown on screen. |
+| `Device1DisplayName` … `Device3DisplayName` | Label shown as the field's header. |
+| `Device1Show` … `Device3Show` | Quantity shown: 0 = all, 1 = temperature, 2 = humidity, 3 = pressure. |
 | `CustomServiceUuid` | Optional service UUID; blank = Nordic UART `6E400001-B5A3-F393-E0A9-E50E24DCCA9E`. |
 | `CustomCharUuid` | Optional data characteristic UUID; blank = Nordic UART TX `6E400003-B5A3-F393-E0A9-E50E24DCCA9E`. |
 
@@ -113,5 +122,5 @@ non-numeric or out of range are dropped and the last good values are kept.
 ## Building
 
 ```
-monkeyc -d montana7xx -f monkey.jungle -o bin/EnvSensor.prg -y <developer_key>
+monkeyc -d montana7xx -f monkey.jungle -o bin/RuuviSensor.prg -y <developer_key>
 ```

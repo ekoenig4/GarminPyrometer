@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-    Connect IQ manifest for the EnvSensor BLE data field.
+    Connect IQ manifest for the RuuviSensor data field.
     - type="datafield"     : SimpleDataField application
     - minApiLevel="3.2.0"  : BluetoothLowEnergy + Application.Properties
     - BluetoothLowEnergy permission is mandatory for Toybox.BluetoothLowEnergy

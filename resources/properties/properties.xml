@@ -5,6 +5,8 @@
                           An empty value disables the slot. "*" connects to
                           any sensor that advertises the service UUID.
     DeviceNDisplayName  : label rendered on the data field for that device.
+    DeviceNShow         : quantity shown: 0 = all, 1 = temperature,
+                          2 = humidity, 3 = pressure.
     CustomServiceUuid   : optional override of the Nordic UART Service UUID
                           (6E400001-B5A3-F393-E0A9-E50E24DCCA9E).
     CustomCharUuid      : optional override of the Nordic UART TX
@@ -13,12 +15,15 @@
 <properties>
     <property id="Device1BleId" type="string">*</property>
     <property id="Device1DisplayName" type="string">Balloon 1</property>
+    <property id="Device1Show" type="number">0</property>
 
     <property id="Device2BleId" type="string"></property>
     <property id="Device2DisplayName" type="string">Balloon 2</property>
+    <property id="Device2Show" type="number">0</property>
 
     <property id="Device3BleId" type="string"></property>
     <property id="Device3DisplayName" type="string">Balloon 3</property>
+    <property id="Device3Show" type="number">0</property>
 
     <property id="CustomServiceUuid" type="string"></property>
     <property id="CustomCharUuid" type="string"></property>
