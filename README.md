@@ -1,7 +1,7 @@
 # RuuviSensor — Garmin Connect IQ data field
 
 A Connect IQ data field for the Garmin Montana 700 series (`montana7xx`,
-Connect IQ API 3.2.0+) that shows temperature, humidity or pressure from
+Connect IQ API 3.2.0+) that shows temperature, humidity, pressure or battery voltage from
 RuuviTags and Ruuvi-firmware sensors (such as the HOTAIR pyrometer).
 
 Ruuvi sensors broadcast their readings in every advertisement, so nothing is
@@ -14,7 +14,12 @@ its own name and choice of what to show.
 | Temperature (default) | `Balloon 1` | `23.5 °C` |
 | Humidity | `Balloon 1` | `61 %RH` |
 | Pressure | `Balloon 1` | `1013 hPa` |
+| Battery | `Balloon 1` | `2.95 V` |
 | All | `Balloon 1` | `T:23.5 H:61 P:1013` |
+
+Whatever is shown, `!` after the unit (`23.5 °C!`) means the tag's battery is
+low, using Ruuvi Station's rule: below 2.5 V, or 2.3 V below 0 °C and 2.0 V
+at −20 °C and colder, judged by the tag's own temperature reading.
 
 The field shows the one sensor chosen under **Display** in the settings menu
 (the first in the list until you choose one).
@@ -25,9 +30,13 @@ The field shows the one sensor chosen under **Display** in the settings menu
 | --- | --- |
 | `manifest.xml` | App id, `datafield` type, `montana7xx`, `BluetoothLowEnergy` permission |
 | `monkey.jungle` | Build file |
+| `sim.jungle` | Simulator build with fake tags (use after `monkey.jungle`) |
 | `source/RuuviSensorApp.mc` | Entry point; starts BLE (data field mode only), caches units |
 | `source/RuuviSensorView.mc` | Data field view, drawn like the native fields |
-| `source/RuuviScanner.mc` | BLE scanning and Ruuvi data format 5 decoding |
+| `source/RuuviScanner.mc` | BLE scanning; keeps readings and the nearby-tag list |
+| `source/RuuviDecode.mc` | Ruuvi data format 5 decoding, low-battery rule |
+| `source/RuuviDecodeTests.mc` | Unit tests for the decoder |
+| `source/RuuviFakeSource.mc` | Fake tags for simulator builds |
 | `source/RuuviSettings.mc` | On-device settings menu (sensor list, units) |
 | `source/RuuviConfig.mc` | Sensor list storage, units, helpers |
 | `resources/properties/properties.xml` | Unit settings |
@@ -75,15 +84,19 @@ Manufacturer data (company `0x0499`) after the company id:
 | 1–2 | temperature, int16 × 0.005 °C |
 | 3–4 | humidity, uint16 × 0.0025 % |
 | 5–6 | pressure, uint16 + 50000 Pa |
+| 13–14 | power info: battery (upper 11 bits, + 1600 mV), tx power (lower 5) |
 | 18–23 | MAC address |
 
-`0x8000` / `0xFFFF` mark unavailable values; such broadcasts are ignored.
+`0x8000` / `0xFFFF` mark unavailable temperature, humidity or pressure; such
+broadcasts are ignored. A battery value of `0x7FF` means the tag does not
+report it (Battery then shows `BAT ---`).
 
 ## Display states
 
 | Value | Meaning |
 | --- | --- |
-| reading | Latest broadcast; `?` after the unit when older than 30 s |
+| reading | Latest broadcast; `?` after the unit when older than 30 s, `!` when the battery is low |
+| `BAT ---` | Show is Battery but the tag does not report its battery voltage |
 | `---` | No broadcast from that sensor for 60 s |
 | `SCAN 2 found` | Sensor not heard yet; 2 Ruuvi tags heard in the last 30 s |
 | `SCAN OFF` / `SCAN ERR n` | Not scanning (retrying) / the system refused to scan |
@@ -96,6 +109,37 @@ Manufacturer data (company `0x0499`) after the company id:
 ```
 monkeyc -d montana7xx -f monkey.jungle -o bin/RuuviSensor.prg -y <developer_key>
 ```
+
+## Testing
+
+The decoder's unit tests use the test vectors from Ruuvi's data format 5
+specification. Build with `-t` and run them in the simulator:
+
+```
+monkeyc -d montana7xx -f monkey.jungle -t -o bin/RuuviSensorTest.prg -y <developer_key>
+connectiq &
+monkeydo bin/RuuviSensorTest.prg montana7xx -t
+```
+
+## Simulator
+
+The simulator hears no RuuviTags, so `sim.jungle` builds the field with
+made-up tags (`source/RuuviFakeSource.mc`) instead of BLE. Their adverts go
+through the same decoding as real ones:
+
+| Tag | Behaviour |
+| --- | --- |
+| `HOTAIR F001` | 80–110 °C, battery OK |
+| `Ruuvi F002` | about 21 °C, low battery (`!`) |
+| `Ruuvi F003` | heard 20 s in every 90 s, so it goes `?` then `---`; no battery value |
+
+```
+monkeyc -d montana7xx -f "monkey.jungle;sim.jungle" -o bin/RuuviSensorSim.prg -y <developer_key>
+monkeydo bin/RuuviSensorSim.prg montana7xx
+```
+
+Add the tags from the settings menu as on the device. Never sideload this
+build to a Montana: it ignores real tags.
 
 monkeyc 9.2 names string constants from their letters/digits plus Java
 `hashCode()`, so two punctuation-only literals with the same hash (e.g. `", "`
