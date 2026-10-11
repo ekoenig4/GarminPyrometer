@@ -113,12 +113,15 @@ module EnvSettings {
 
 class EnvSettingsMenu extends WatchUi.Menu2 {
 
-    //! Builds the main menu with one item per device slot.
+    //! Builds the main menu with one item per device slot, plus "Done".
+    //! On the Montana's touchscreen the title-bar back arrow needs two taps
+    //! (highlight, then activate); "Done" leaves the settings with one.
     function initialize() {
         Menu2.initialize({ :title => "EnvSensor" });
         for (var i = 0; i < EnvSensorApp.MAX_DEVICES; i++) {
             addItem(new WatchUi.MenuItem("Device " + (i + 1), EnvSettings.describeSlot(i), i, null));
         }
+        addItem(new WatchUi.MenuItem("Done", "Settings are saved", :done, null));
     }
 }
 
@@ -128,10 +131,16 @@ class EnvSettingsMenuDelegate extends WatchUi.Menu2InputDelegate {
         Menu2InputDelegate.initialize();
     }
 
-    //! Opens the sub-menu for the selected device slot.
-    //! @param item Selected menu item (id = slot index)
+    //! Opens the sub-menu for the selected device slot, or leaves the
+    //! settings for "Done" (settings were saved as each one was changed).
+    //! @param item Selected menu item (id = slot index or :done)
     function onSelect(item as WatchUi.MenuItem) as Void {
-        var slot = item.getId() as Number;
+        var id = item.getId();
+        if (id == :done) {
+            WatchUi.popView(WatchUi.SLIDE_RIGHT);
+            return;
+        }
+        var slot = id as Number;
         WatchUi.pushView(new EnvDeviceMenu(slot), new EnvDeviceMenuDelegate(slot, item), WatchUi.SLIDE_LEFT);
     }
 
