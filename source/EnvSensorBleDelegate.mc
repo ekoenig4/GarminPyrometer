@@ -344,7 +344,7 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
             if (err != null) {
                 return err;
             }
-            return hasUnpairedSlot() ? "OFF" : "IDLE";
+            return (hasUnpairedSlot() || !hasEnabledSlot()) ? "OFF" : "IDLE";
         }
         var now = System.getTimer();
         var named = 0;
@@ -1012,6 +1012,16 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
         return false;
     }
 
+    //! @return true if at least one slot has a BLE id configured
+    private function hasEnabledSlot() as Boolean {
+        for (var i = 0; i < mSlots.size(); i++) {
+            if (mSlots[i].isEnabled()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     //! Sequential cycling: when every connection slot is used but some
     //! configured device is still waiting, release the device that has been
     //! connected the longest (after CYCLE_INTERVAL_MS) so the next one can
@@ -1043,12 +1053,13 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
         }
     }
 
-    //! Scans whenever a slot is waiting and nothing is being paired; stops
-    //! otherwise (saves power). Scanning deliberately does not wait for the
-    //! GATT profile or a free connection: only pairing needs those, and the
-    //! nearby-device list must fill even when pairing is not possible.
+    //! Scans whenever nothing is being paired and either a slot is waiting
+    //! or no slot is configured at all (so the settings menu's nearby list
+    //! can fill and the user can pick a first sensor); stops otherwise to
+    //! save power. Scanning deliberately does not wait for the GATT profile
+    //! or a free connection: only pairing needs those.
     private function updateScanState() as Void {
-        var want = mPairingSlot < 0 && hasUnpairedSlot();
+        var want = mPairingSlot < 0 && (hasUnpairedSlot() || !hasEnabledSlot());
         setScanning(want);
     }
 

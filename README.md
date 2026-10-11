@@ -68,7 +68,7 @@ non-numeric or out of range are dropped and the last good values are kept.
 | `---` | Device was connected and the link dropped; reconnecting |
 | `WAIT` | Connected, no data yet |
 | `T:… H:… P:…?` | Latest readings; `?` means no new data for 30 s |
-| `NO SENSORS` | No device BLE name configured |
+| `NO SENSORS <status>` | No device configured; still scanning (status as for `SCAN`) so the settings menu can list nearby devices |
 | `NO BLE` | Product has no Connect IQ BLE support |
 
 ## Notes

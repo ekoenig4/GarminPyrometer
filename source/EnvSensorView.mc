@@ -58,7 +58,8 @@ class EnvSensorView extends WatchUi.SimpleDataField {
             var slots = ble.getSlots();
             var active = selectActiveSlot(slots);
             if (active == null) {
-                return "NO SENSORS";
+                // Still scanning, so the settings menu can list nearby devices.
+                return "NO SENSORS " + ble.getScanStatus();
             }
             return formatSlot(active);
         } catch (e) {
