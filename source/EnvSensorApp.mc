@@ -41,11 +41,12 @@ class EnvSensorApp extends Application.AppBase {
         }
     }
 
-    //! Called when the data field starts. Registers the BLE delegate and applies
-    //! the stored settings, which registers the GATT profile and starts scanning.
+    //! Called when the app starts, both as a data field and when the
+    //! on-device settings menu is opened. BLE is started later, from
+    //! getInitialView() or getSettingsView(), because the two modes need it
+    //! set up differently.
     //! @param state Startup arguments (unused)
     function onStart(state as Dictionary?) as Void {
-        startBle();
     }
 
     //! Called when the data field is removed or the activity ends.
@@ -61,6 +62,7 @@ class EnvSensorApp extends Application.AppBase {
     //! Returns the initial view for the data field.
     //! @return Array containing the EnvSensorView
     function getInitialView() {
+        startBle(false);
         return [new EnvSensorView(mBleDelegate)];
     }
 
@@ -78,13 +80,9 @@ class EnvSensorApp extends Application.AppBase {
     //! Connect shows app settings only for store installs.
     //! @return [Menu2, Menu2InputDelegate]
     function getSettingsView() {
-        startBle();
-        var delegate = mBleDelegate;
-        if (delegate != null) {
-            // Scan for nearby sensors while the menu is open so the
-            // "Choose sensor" list is populated by the time it is opened.
-            delegate.setDiscovery(true);
-        }
+        // Discovery only: scan for nearby sensors so the "Choose sensor" list
+        // is populated, but never register a profile or pair from here.
+        startBle(true);
         return [new EnvSettingsMenu(), new EnvSettingsMenuDelegate()];
     }
 
@@ -111,9 +109,10 @@ class EnvSensorApp extends Application.AppBase {
         return mBleDelegate;
     }
 
-    //! Registers the BLE delegate and applies the stored settings, which
-    //! registers the GATT profile and starts scanning. Idempotent.
-    private function startBle() as Void {
+    //! Registers the BLE delegate and applies the stored settings. Idempotent.
+    //! @param discovery true for the settings menu (scan only, no profile, no
+    //!                  pairing); false for the data field (normal operation)
+    private function startBle(discovery as Boolean) as Void {
         var delegate = mBleDelegate;
         if (delegate == null || mBleStarted) {
             return;
@@ -121,6 +120,10 @@ class EnvSensorApp extends Application.AppBase {
         try {
             Ble.setDelegate(delegate);
             mBleStarted = true;
+            if (discovery) {
+                // Must precede applyConfig() so no profile gets registered.
+                delegate.setDiscovery(true);
+            }
             delegate.applyConfig(readConfig());
         } catch (e) {
             System.println("EnvSensor: BLE start failed: " + e.getErrorMessage());

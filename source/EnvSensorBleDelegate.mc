@@ -145,6 +145,12 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
     // True when the GATT profile could not be registered (no pairing possible).
     private var mProfileFailed as Boolean = false;
 
+    // True once registerProfile() has been attempted for the active UUIDs.
+    private var mProfileRequested as Boolean = false;
+
+    // True after endDiscovery()/shutdown(): no further BLE calls are made.
+    private var mEnded as Boolean = false;
+
     // Serialized GATT request queue (slot indices awaiting a CCCD write).
     private var mNotifyQueue as Array<Number>;
     private var mRequestSlot as Number = -1;   // slot with a request in flight
@@ -195,7 +201,13 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
             }
             mServiceUuid = svc;
             mCharUuid = chr;
-            registerProfile();
+            mProfileRequested = false;
+            mProfileReady = false;
+            // The settings menu (discovery) never needs the profile; the data
+            // field registers it here, or from tick() later.
+            if (!mDiscovery) {
+                registerProfile();
+            }
         }
 
         // ---- Update slots ----
@@ -227,6 +239,11 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
     //! Handles pairing / reconnect / request timeouts and connection cycling.
     function tick() as Void {
         var now = System.getTimer();
+
+        // ---- Profile not registered yet (e.g. UUIDs changed in discovery) ----
+        if (!mDiscovery && !mEnded && !mProfileRequested) {
+            registerProfile();
+        }
 
         // ---- Stuck GATT request: drop it and move on ----
         if (mRequestSlot >= 0 && (now - mRequestStartMs) > REQUEST_TIMEOUT_MS) {
@@ -268,6 +285,7 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
 
     //! Stops scanning and releases every device. Called from AppBase.onStop().
     function shutdown() as Void {
+        mEnded = true;
         for (var i = 0; i < mSlots.size(); i++) {
             releaseSlot(i);
         }
@@ -287,6 +305,15 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
             mServiceSeenMs = 0;
         }
         updateScanState();
+    }
+
+    //! Ends discovery when the settings menu closes: stops scanning and does
+    //! not resume normal scanning (the app is about to exit, and starting a
+    //! scan during teardown is what we must avoid).
+    function endDiscovery() as Void {
+        mDiscovery = false;
+        mEnded = true;
+        setScanning(false);
     }
 
     //! Short scan diagnostic for the data field, shown after "SCAN":
@@ -625,6 +652,7 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
         if (svc == null || chr == null) {
             return;
         }
+        mProfileRequested = true;
 
         if (mRegisteredProfiles.indexOf(svc.toString()) >= 0) {
             mProfileReady = true;
@@ -963,7 +991,8 @@ class EnvSensorBleDelegate extends Ble.BleDelegate {
     //! Requests a scan state change if it differs from the current one.
     //! @param on true to scan
     private function setScanning(on as Boolean) as Void {
-        if (on == mScanning) {
+        // Never start a scan once the app is closing.
+        if (on == mScanning || (on && mEnded)) {
             return;
         }
         try {

@@ -130,14 +130,15 @@ class EnvSettingsMenuDelegate extends WatchUi.Menu2InputDelegate {
         WatchUi.pushView(new EnvDeviceMenu(slot), new EnvDeviceMenuDelegate(slot, item), WatchUi.SLIDE_LEFT);
     }
 
-    //! Leaving settings: stop discovery scanning and resume normal operation.
+    //! Leaving settings: stop scanning before the menu closes. Nothing is
+    //! restarted here; settings were already saved as each one was changed,
+    //! and the data field picks them up itself.
     function onBack() as Void {
         var ble = getApp().getBleDelegate();
         if (ble != null) {
-            ble.setDiscovery(false);
+            ble.endDiscovery();
         }
-        getApp().applySettings();
-        WatchUi.popView(WatchUi.SLIDE_RIGHT);
+        WatchUi.popView(WatchUi.SLIDE_IMMEDIATE);
     }
 }
 
