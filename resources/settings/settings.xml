@@ -1,59 +1,9 @@
 <!--
-    Settings panel shown in Garmin Connect / Garmin Express.
-    Every setting is bound to a property from properties.xml and is pushed to
-    the device at runtime; EnvSensorApp.onSettingsChanged() applies the new
-    values without recompiling or restarting the data field.
+    Settings panel shown in Garmin Connect / Garmin Express (store installs).
+    The sensor list is managed from the on-device settings menu, because this
+    panel cannot hold a variable-length list.
 -->
 <settings>
-    <!-- Device 1 -->
-    <setting propertyKey="@Properties.Device1BleId" title="@Strings.Device1BleIdTitle" prompt="@Strings.BleIdPrompt">
-        <settingConfig type="alphaNumeric"/>
-    </setting>
-    <setting propertyKey="@Properties.Device1DisplayName" title="@Strings.Device1DisplayNameTitle" prompt="@Strings.DisplayNamePrompt">
-        <settingConfig type="alphaNumeric"/>
-    </setting>
-    <setting propertyKey="@Properties.Device1Show" title="@Strings.Device1ShowTitle">
-        <settingConfig type="list">
-            <listEntry value="0">@Strings.ShowAll</listEntry>
-            <listEntry value="1">@Strings.ShowTemperature</listEntry>
-            <listEntry value="2">@Strings.ShowHumidity</listEntry>
-            <listEntry value="3">@Strings.ShowPressure</listEntry>
-        </settingConfig>
-    </setting>
-
-    <!-- Device 2 -->
-    <setting propertyKey="@Properties.Device2BleId" title="@Strings.Device2BleIdTitle" prompt="@Strings.BleIdPrompt">
-        <settingConfig type="alphaNumeric"/>
-    </setting>
-    <setting propertyKey="@Properties.Device2DisplayName" title="@Strings.Device2DisplayNameTitle" prompt="@Strings.DisplayNamePrompt">
-        <settingConfig type="alphaNumeric"/>
-    </setting>
-    <setting propertyKey="@Properties.Device2Show" title="@Strings.Device2ShowTitle">
-        <settingConfig type="list">
-            <listEntry value="0">@Strings.ShowAll</listEntry>
-            <listEntry value="1">@Strings.ShowTemperature</listEntry>
-            <listEntry value="2">@Strings.ShowHumidity</listEntry>
-            <listEntry value="3">@Strings.ShowPressure</listEntry>
-        </settingConfig>
-    </setting>
-
-    <!-- Device 3 -->
-    <setting propertyKey="@Properties.Device3BleId" title="@Strings.Device3BleIdTitle" prompt="@Strings.BleIdPrompt">
-        <settingConfig type="alphaNumeric"/>
-    </setting>
-    <setting propertyKey="@Properties.Device3DisplayName" title="@Strings.Device3DisplayNameTitle" prompt="@Strings.DisplayNamePrompt">
-        <settingConfig type="alphaNumeric"/>
-    </setting>
-    <setting propertyKey="@Properties.Device3Show" title="@Strings.Device3ShowTitle">
-        <settingConfig type="list">
-            <listEntry value="0">@Strings.ShowAll</listEntry>
-            <listEntry value="1">@Strings.ShowTemperature</listEntry>
-            <listEntry value="2">@Strings.ShowHumidity</listEntry>
-            <listEntry value="3">@Strings.ShowPressure</listEntry>
-        </settingConfig>
-    </setting>
-
-    <!-- Display units -->
     <setting propertyKey="@Properties.TempUnit" title="@Strings.TempUnitTitle">
         <settingConfig type="list">
             <listEntry value="0">@Strings.TempUnitDevice</listEntry>
@@ -67,13 +17,5 @@
             <listEntry value="1">@Strings.PressureUnitInHg</listEntry>
             <listEntry value="2">@Strings.PressureUnitMmHg</listEntry>
         </settingConfig>
-    </setting>
-
-    <!-- Alternative sensor brands -->
-    <setting propertyKey="@Properties.CustomServiceUuid" title="@Strings.CustomServiceUuidTitle" prompt="@Strings.UuidPrompt">
-        <settingConfig type="alphaNumeric"/>
-    </setting>
-    <setting propertyKey="@Properties.CustomCharUuid" title="@Strings.CustomCharUuidTitle" prompt="@Strings.UuidPrompt">
-        <settingConfig type="alphaNumeric"/>
     </setting>
 </settings>

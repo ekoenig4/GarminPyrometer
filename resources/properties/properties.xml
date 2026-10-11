@@ -1,35 +1,15 @@
 <!--
     Application properties (persistent user settings).
 
-    DeviceNBleId        : advertised BLE local name matched during scanning.
-                          An empty value disables the slot. "*" connects to
-                          any sensor that advertises the service UUID.
-    DeviceNDisplayName  : label rendered on the data field for that device.
-    DeviceNShow         : quantity shown (default 1): 0 = all, 1 = temperature,
-                          2 = humidity, 3 = pressure.
-    CustomServiceUuid   : optional override of the Nordic UART Service UUID
-                          (6E400001-B5A3-F393-E0A9-E50E24DCCA9E).
-    CustomCharUuid      : optional override of the Nordic UART TX
-                          characteristic UUID (6E400003-B5A3-F393-E0A9-E50E24DCCA9E).
+    The sensor list has a variable length, so it is kept in
+    Application.Storage and edited from the on-device settings menu; only the
+    display units live here (they can also be set from Garmin Connect for
+    store installs).
+
+    TempUnit      : 0 = follow the device's unit setting, 1 = °C, 2 = °F
+    PressureUnit  : 0 = hPa, 1 = inHg, 2 = mmHg
 -->
 <properties>
-    <property id="Device1BleId" type="string">*</property>
-    <property id="Device1DisplayName" type="string">Balloon 1</property>
-    <property id="Device1Show" type="number">1</property>
-
-    <property id="Device2BleId" type="string"></property>
-    <property id="Device2DisplayName" type="string">Balloon 2</property>
-    <property id="Device2Show" type="number">1</property>
-
-    <property id="Device3BleId" type="string"></property>
-    <property id="Device3DisplayName" type="string">Balloon 3</property>
-    <property id="Device3Show" type="number">1</property>
-
-    <!-- Display units: TempUnit 0 = device setting, 1 = C, 2 = F;
-         PressureUnit 0 = hPa, 1 = inHg, 2 = mmHg. -->
     <property id="TempUnit" type="number">0</property>
     <property id="PressureUnit" type="number">0</property>
-
-    <property id="CustomServiceUuid" type="string"></property>
-    <property id="CustomCharUuid" type="string"></property>
 </properties>

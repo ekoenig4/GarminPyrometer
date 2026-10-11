@@ -9,7 +9,7 @@
     <iq:application id="fa6a15ae8e004ab197061da1619b091a"
                     type="datafield"
                     name="@Strings.AppName"
-                    entry="EnvSensorApp"
+                    entry="RuuviSensorApp"
                     launcherIcon="@Drawables.LauncherIcon"
                     minApiLevel="3.2.0">
         <iq:products>
