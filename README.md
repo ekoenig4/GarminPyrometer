@@ -16,8 +16,8 @@ its own name and choice of what to show.
 | Pressure | `Balloon 1` | `1013 hPa` |
 | All | `Balloon 1` | `T:23.5 H:61 P:1013` |
 
-The field shows the sensor chosen under **Display** in the settings menu, or
-cycles through all of them every 3 seconds with **Rotate all** (the default).
+The field shows the one sensor chosen under **Display** in the settings menu
+(the first in the list until you choose one).
 
 ## Layout
 
@@ -48,10 +48,10 @@ cycles through all of them every 3 seconds with **Rotate all** (the default).
    - **Show** — Temperature, Humidity, Pressure or All.
    - **Rename** — the name shown as the field's header.
    - **Remove** — delete it from the list.
-5. Back in the main menu, **Display** picks the sensor the field shows
-   (or **Rotate all**). The choice is saved, so the field keeps showing that
-   sensor every time it starts. Removing the displayed sensor falls back to
-   Rotate all.
+5. Back in the main menu, **Display** picks the sensor the field shows.
+   The choice is saved, so the field keeps showing that sensor every time it
+   starts. Until you choose one, or after removing the displayed sensor, the
+   field shows the first sensor in the list.
 6. **Temperature unit** (Device setting / °C / °F) and
    **Pressure unit** (hPa / inHg / mmHg) apply to every sensor. *Device
    setting* follows the Montana's own unit setting.

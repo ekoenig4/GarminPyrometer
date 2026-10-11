@@ -12,9 +12,8 @@
 //
 // The field is drawn by hand (DataField + onUpdate) so single readings use
 // the device's number fonts with the unit in a smaller font beside them, like
-// the native fields. The field shows the sensor chosen under Display in the
-// settings menu; with "Rotate all" it cycles through the list every
-// ROTATE_INTERVAL_MS.
+// the native fields. The field shows the one sensor chosen under Display in
+// the settings menu (the first in the list if none is chosen).
 //
 import Toybox.Activity;
 import Toybox.Graphics;
@@ -23,9 +22,6 @@ import Toybox.System;
 import Toybox.WatchUi;
 
 class RuuviSensorView extends WatchUi.DataField {
-
-    // How long each sensor stays on screen when several are listed.
-    private const ROTATE_INTERVAL_MS = 3000;
 
     // Readings older than this are flagged with "?" (tag went quiet)...
     private const STALE_DATA_MS = 30000;
@@ -49,12 +45,6 @@ class RuuviSensorView extends WatchUi.DataField {
         Graphics.FONT_TINY, Graphics.FONT_XTINY
     ];
 
-    // Index into the sensor list of the sensor currently shown.
-    private var mActive as Number = 0;
-
-    // System.getTimer() value when mActive was last advanced.
-    private var mLastRotateMs as Number = 0;
-
     // What onUpdate() draws, prepared by compute().
     private var mLabel as String = APP_LABEL;  // header
     private var mValue as String = "";         // main value
@@ -65,11 +55,10 @@ class RuuviSensorView extends WatchUi.DataField {
     function initialize() {
         DataField.initialize();
         var devices = RuuviConfig.loadDevices();
-        if (devices.size() > 0) {
-            var idx = RuuviConfig.findDevice(devices, RuuviConfig.getActive());
-            mLabel = devices[(idx >= 0) ? idx : 0][RuuviConfig.F_NAME] as String;
+        var idx = RuuviConfig.displayedIndex(devices, RuuviConfig.getActive());
+        if (idx >= 0) {
+            mLabel = devices[idx][RuuviConfig.F_NAME] as String;
         }
-        mLastRotateMs = System.getTimer();
     }
 
     //! Called once per second by the activity. Drives the scanner and
@@ -88,27 +77,17 @@ class RuuviSensorView extends WatchUi.DataField {
             scanner.tick();
 
             var devices = scanner.getDevices();
-            if (devices.size() == 0) {
+            var idx = RuuviConfig.displayedIndex(devices, scanner.getActive());
+            if (idx < 0) {
                 // Still scanning, so the settings menu can offer nearby tags.
                 mLabel = APP_LABEL;
                 setText("NO SENSORS " + scanner.getStatus());
                 return;
             }
 
-            // The sensor chosen under Display, else rotate through the list.
+            // The sensor chosen under Display (else the first in the list).
             var now = System.getTimer();
-            var fixed = RuuviConfig.findDevice(devices, scanner.getActive());
-            if (fixed >= 0) {
-                mActive = fixed;
-            } else if (devices.size() > 1 && (now - mLastRotateMs) >= ROTATE_INTERVAL_MS) {
-                mLastRotateMs = now;
-                mActive++;
-            }
-            if (mActive >= devices.size()) {
-                mActive = 0;
-            }
-
-            var dev = devices[mActive];
+            var dev = devices[idx];
             var mac = dev[RuuviConfig.F_MAC] as String;
             mLabel = dev[RuuviConfig.F_NAME] as String;
             formatReading(scanner.getReading(mac), dev[RuuviConfig.F_SHOW] as Number, scanner, now);

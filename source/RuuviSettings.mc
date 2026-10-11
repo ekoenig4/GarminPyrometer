@@ -6,7 +6,7 @@
 // variable-length list, so the sensor list is edited here. Menu tree:
 //
 //   RuuviSensor
-//   +-- Display           -> Rotate all / <sensor>: what the field shows
+//   +-- Display           -> <sensor>: the one sensor the field shows
 //   +-- Sensors           (own sub-menu so the list is clearly separate)
 //   |   +-- + Add sensor  -> Ruuvi tags recently heard by the data field
 //   |   +-- <sensor> ...  (one entry per listed sensor)
@@ -34,10 +34,11 @@ function sensorCountText() as String {
     return RuuviConfig.loadDevices().size() + " of " + RuuviConfig.MAX_DEVICES + " used";
 }
 
-//! @return Name of the displayed sensor, or "Rotate all"
+//! @return Name of the displayed sensor, or "No sensors"
 function displayText() as String {
-    var dev = RuuviConfig.getDevice(RuuviConfig.getActive());
-    return (dev != null) ? (dev[RuuviConfig.F_NAME] as String) : "Rotate all";
+    var devices = RuuviConfig.loadDevices();
+    var idx = RuuviConfig.displayedIndex(devices, RuuviConfig.getActive());
+    return (idx >= 0) ? (devices[idx][RuuviConfig.F_NAME] as String) : "No sensors";
 }
 
 //! Sub-label of a sensor's menu item, e.g. "Temperature, BBF3".
@@ -104,18 +105,20 @@ class RuuviMainMenuDelegate extends WatchUi.Menu2InputDelegate {
 
 class RuuviDisplayMenu extends WatchUi.Menu2 {
 
-    //! "Rotate all", then every listed sensor (item id = MAC); the current
-    //! choice is marked "Selected".
+    //! Every listed sensor (item id = MAC); the one shown is marked
+    //! "Selected".
     function initialize() {
         Menu2.initialize({ :title => "Display" });
-        var active = RuuviConfig.getActive();
         var devices = RuuviConfig.loadDevices();
-        var fixed = RuuviConfig.findDevice(devices, active) >= 0;
+        var shown = RuuviConfig.displayedIndex(devices, RuuviConfig.getActive());
 
-        addItem(new WatchUi.MenuItem("Rotate all", fixed ? "Cycle every 3 s" : "Selected", :rotate, null));
+        if (devices.size() == 0) {
+            addItem(new WatchUi.MenuItem("No sensors", "Add one under Sensors", :none, null));
+            return;
+        }
         for (var i = 0; i < devices.size(); i++) {
             var mac = devices[i][RuuviConfig.F_MAC] as String;
-            var sub = mac.equals(active) ? "Selected" : null;
+            var sub = (i == shown) ? "Selected" : RuuviConfig.formatMac(mac);
             addItem(new WatchUi.MenuItem(devices[i][RuuviConfig.F_NAME] as String, sub, mac, null));
         }
     }
@@ -131,13 +134,15 @@ class RuuviDisplayMenuDelegate extends WatchUi.Menu2InputDelegate {
         mItem = item;
     }
 
-    //! Stores the chosen sensor ("" for Rotate all) and returns.
-    //! @param item Selected item (id = MAC or :rotate)
+    //! Stores the chosen sensor and returns.
+    //! @param item Selected item (id = MAC, or :none when the list is empty)
     function onSelect(item as WatchUi.MenuItem) as Void {
         var id = item.getId();
-        RuuviConfig.setActive((id instanceof String) ? id : "");
-        mItem.setSubLabel(displayText());
-        getApp().applySettings();
+        if (id instanceof String) {
+            RuuviConfig.setActive(id);
+            mItem.setSubLabel(displayText());
+            getApp().applySettings();
+        }
         WatchUi.popView(WatchUi.SLIDE_RIGHT);
     }
 }

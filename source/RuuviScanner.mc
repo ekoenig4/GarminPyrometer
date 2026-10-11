@@ -40,7 +40,7 @@ class RuuviScanner extends Ble.BleDelegate {
     // Sensor list rows [mac, name, show] (see RuuviConfig).
     private var mDevices as Array<Array>;
 
-    // MAC of the sensor the field shows, or "" to rotate.
+    // MAC chosen under Display ("" if none: the first sensor is shown).
     private var mActive as String = "";
 
     // Latest readings of listed tags: mac => [tempC, humidity, hPa, timerMs].
@@ -115,7 +115,7 @@ class RuuviScanner extends Ble.BleDelegate {
         return mDevices;
     }
 
-    //! @return MAC of the sensor the field shows, or "" to rotate
+    //! @return MAC chosen under Display, or "" if none was chosen
     function getActive() as String {
         return mActive;
     }
