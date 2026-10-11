@@ -32,11 +32,6 @@ class RuuviScanner extends Ble.BleDelegate {
     // Cap on remembered nearby tags.
     private const SEEN_MAX = 20;
 
-    // Ruuvi manufacturer data: company id 0x0499 (little endian 0x99 0x04).
-    private const RUUVI_COMPANY_LO = 0x99;
-    private const RUUVI_COMPANY_HI = 0x04;
-    private const RUUVI_FORMAT_5   = 0x05;
-
     // Sensor list rows [mac, name, show] (see RuuviConfig).
     private var mDevices as Array<Array>;
 
@@ -191,69 +186,16 @@ class RuuviScanner extends Ble.BleDelegate {
     // Ruuvi decoding
     // ---------------------------------------------------------------------
 
-    //! Decodes a Ruuvi data format 5 (RAWv2) broadcast from the raw
-    //! advertising data. Layout after the 0x0499 company id:
-    //!   [0] 0x05  [1-2] temp int16 x0.005 C  [3-4] humidity uint16 x0.0025 %
-    //!   [5-6] pressure uint16 +50000 Pa  ...  [18-23] MAC address
+    //! Decodes a Ruuvi data format 5 (RAWv2) broadcast (see RuuviDecode).
     //! @param result Scan result
     //! @return [temperatureC, humidityPct, pressureHpa, macHex] or null if
     //!         this is not a valid Ruuvi format 5 broadcast
     private function decodeRuuvi(result as Ble.ScanResult) as Array? {
-        var data = null;
         try {
-            data = ruuviManufacturerData(result.getRawData());
+            return RuuviDecode.decodeFormat5(RuuviDecode.manufacturerData(result.getRawData()));
         } catch (e) {
             return null;
         }
-        if (data == null || data.size() < 24 || data[0] != RUUVI_FORMAT_5) {
-            return null;
-        }
-
-        var t = (data[1] << 8) | data[2];
-        var h = (data[3] << 8) | data[4];
-        var p = (data[5] << 8) | data[6];
-        // 0x8000 / 0xFFFF mark "not available" in format 5.
-        if (t == 0x8000 || h == 0xFFFF || p == 0xFFFF) {
-            return null;
-        }
-        if (t >= 0x8000) {
-            t -= 0x10000;   // int16 sign
-        }
-
-        var mac = "";
-        for (var i = 18; i < 24; i++) {
-            mac += data[i].format("%02X");
-        }
-
-        var hum = h * 0.0025;
-        if (hum > 100.0) {
-            hum = 100.0;
-        }
-        return [t * 0.005, hum, (p + 50000) / 100.0, mac];
-    }
-
-    //! Finds the Ruuvi manufacturer data in raw advertising data, which is a
-    //! sequence of [length][type][payload...] structures (type 0xFF =
-    //! manufacturer specific, payload starts with the company id).
-    //! @param raw Raw advertising bytes (may be null)
-    //! @return Bytes after the company id, or null if not a Ruuvi advert
-    private function ruuviManufacturerData(raw as Lang.ByteArray?) as Lang.ByteArray? {
-        if (raw == null) {
-            return null;
-        }
-        var i = 0;
-        while (i + 1 < raw.size()) {
-            var len = raw[i];
-            if (len == 0 || i + len >= raw.size()) {
-                return null;
-            }
-            if (raw[i + 1] == 0xFF && len >= 3
-                    && raw[i + 2] == RUUVI_COMPANY_LO && raw[i + 3] == RUUVI_COMPANY_HI) {
-                return raw.slice(i + 4, i + 1 + len);
-            }
-            i += len + 1;
-        }
-        return null;
     }
 
     // ---------------------------------------------------------------------
