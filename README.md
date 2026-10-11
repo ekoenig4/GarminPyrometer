@@ -41,6 +41,16 @@ BLE → Settings**, then for each device:
 - **Rename** — sets the display name (needs an on-screen keyboard).
 - **Turn off** — disables the slot.
 
+**Known Montana issue:** after the on-device settings menu closes, the
+firmware does not restart the data field: it shows the app icon, and the
+settings menu will not open again. Re-add the data field (pick
+EnvSensor BLE for that field again) or restart the Montana. The app never
+gets control at that point, so this cannot be fixed in app code; set
+Device 1 to *Auto connect* once and the field finds the sensor by itself on
+every start, or install from the Connect IQ store (beta is fine) and
+configure from Garmin Connect, which updates the running field without
+this problem.
+
 ### Garmin Connect (store installs)
 
 | Property | Meaning |
