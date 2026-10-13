@@ -146,11 +146,13 @@ most 1–2 s old. Readings come only from BLE scan results, so the scanner
 keeps the scan alive:
 
 - If the system reports the scan off, it is requested again after 2 s.
-- **Watchdog:** if no listed sensor has been heard for 6 s, the scan is
-  switched off and back on a second later, in case the system stopped
+- **Watchdog:** if no *displayed* sensor (switched on under **Display**) has
+  been heard for 6 s, the scan is switched off and back on a second later, in case the system stopped
   delivering results without saying so. While still nothing is heard, the
   next restarts wait 10 s, 20 s, then every 30 s, so tags that are simply out
-  of range do not keep the scan restarting.
+  of range do not keep the scan restarting. Sensors that are switched off
+  under Display (only logged) never trigger a restart, and with no sensor
+  displayed the watchdog is off.
 
 With the lifecycle log enabled (below), the scanner also logs what it sees,
 which shows whether a `---` came from the scan or from the tag. An
@@ -159,8 +161,8 @@ illustrative example (made-up numbers):
 ```
 RuuviSensor 294971796: scan state on status 0
 RuuviSensor 294975102: Balloon 1 first heard
-RuuviSensor 295001781: scan on adverts 412 ruuvi 46 listed 23 in 30 s, restarts 0, last listed 0 s ago
-RuuviSensor 295030113: scan restart, no listed sensor heard for 6 s (restart 1 in a row)
+RuuviSensor 295001781: scan on adverts 412 ruuvi 46 listed 23 in 30 s, restarts 0, last displayed 0 s ago
+RuuviSensor 295030113: scan restart, no displayed sensor heard for 6 s (restart 1 in a row)
 RuuviSensor 295030140: scan state off status 0
 RuuviSensor 295031120: scan state on status 0
 RuuviSensor 295031544: Balloon 1 heard again after 7 s

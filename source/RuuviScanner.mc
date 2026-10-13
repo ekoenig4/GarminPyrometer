@@ -14,9 +14,10 @@
 //     it without using BLE itself.
 //   * Data fields cannot rely on Timer.Timer, so periodic work runs from
 //     tick(), which the view calls once per second from compute().
-//   * Scan watchdog: if no listed sensor has been heard for STALL_MS, the
-//     scan is restarted (off, then on at the next tick), in case the system
-//     stopped delivering results without saying so. Restarts back off
+//   * Scan watchdog: if no displayed sensor (switched on under Display) has
+//     been heard for STALL_MS, the scan is restarted (off, then on at the
+//     next tick), in case the system stopped delivering results without
+//     saying so. Sensors that are only logged never trigger a restart. Restarts back off
 //     (RuuviWatchdog) while nothing is heard, so tags that are simply out of
 //     range do not keep the scan restarting every few seconds.
 //   * Diagnostics go to the app log (trace()): scan state changes,
@@ -64,10 +65,12 @@ class RuuviScanner extends Ble.BleDelegate {
     private var mLastPublishMs as Number = 0;
     private var mLastReloadMs as Number = 0;
 
-    // Watchdog: last advert from a listed sensor, last restart, restarts
-    // since a listed sensor was last heard, and an off -> on restart in
-    // progress (the scan is switched back on at the next tick).
-    private var mLastListedMs as Number = 0;
+    // Watchdog: whether any sensor is displayed, last advert from a
+    // displayed sensor, last restart, restarts since a displayed sensor was
+    // last heard, and an off -> on restart in progress (the scan is switched
+    // back on at the next tick).
+    private var mHasShown as Boolean = false;
+    private var mLastShownMs as Number = 0;
     private var mLastRestartMs as Number = 0;
     private var mFailedRestarts as Number = 0;
     private var mRestartPending as Boolean = false;
@@ -87,7 +90,8 @@ class RuuviScanner extends Ble.BleDelegate {
         mSeen = {} as Dictionary<String, Array>;
         var now = System.getTimer();
         mLastReloadMs = now;
-        mLastListedMs = now;
+        mHasShown = RuuviConfig.visibleIndices(mDevices).size() > 0;
+        mLastShownMs = now;
         mLastRestartMs = now;
         mLastStatsMs = now;
     }
@@ -109,8 +113,17 @@ class RuuviScanner extends Ble.BleDelegate {
 
     //! Re-reads the sensor list (after a settings change).
     function reloadDevices() as Void {
+        var now = System.getTimer();
         mDevices = RuuviConfig.loadDevices();
-        mLastReloadMs = System.getTimer();
+        mLastReloadMs = now;
+        var hasShown = RuuviConfig.visibleIndices(mDevices).size() > 0;
+        if (hasShown && !mHasShown) {
+            // A sensor was just switched on: give it STALL_MS before the
+            // watchdog counts it as silent.
+            mLastShownMs = now;
+            mFailedRestarts = 0;
+        }
+        mHasShown = hasShown;
     }
 
     //! Periodic housekeeping; called once per second by the view.
@@ -129,8 +142,8 @@ class RuuviScanner extends Ble.BleDelegate {
             setScanning(true);
         } else if (!mScanning && !mEnded && (now - mLastScanRequestMs) >= SCAN_RETRY_MS) {
             setScanning(true);
-        } else if (mScanning && !mEnded && mDevices.size() > 0
-                && RuuviWatchdog.restartDue(now, mLastListedMs, mLastRestartMs, mFailedRestarts)) {
+        } else if (mScanning && !mEnded && mHasShown
+                && RuuviWatchdog.restartDue(now, mLastShownMs, mLastRestartMs, mFailedRestarts)) {
             restartScan(now);
         }
 
@@ -383,16 +396,18 @@ class RuuviScanner extends Ble.BleDelegate {
     // Scanning
     // ---------------------------------------------------------------------
 
-    //! Watchdog bookkeeping for a broadcast from a listed sensor; logs the
-    //! sensor's first broadcast and its return after a gap of GAP_LOG_MS or
-    //! more.
+    //! Bookkeeping for a broadcast from a listed sensor: displayed sensors
+    //! reset the watchdog; any listed sensor's first broadcast and its
+    //! return after a gap of GAP_LOG_MS or more are logged.
     //! @param idx Index in the sensor list
     //! @param mac 12 hex digits
     //! @param now System.getTimer()
     private function noteListedAdvert(idx as Number, mac as String, now as Number) as Void {
         mListedAdverts++;
-        mLastListedMs = now;
-        mFailedRestarts = 0;
+        if (mDevices[idx][RuuviConfig.F_VISIBLE] == true) {
+            mLastShownMs = now;
+            mFailedRestarts = 0;
+        }
         var prev = mReadings[mac];
         if (prev == null) {
             trace(mDevices[idx][RuuviConfig.F_NAME] + " first heard");
@@ -406,7 +421,7 @@ class RuuviScanner extends Ble.BleDelegate {
     //! time (about a second later).
     //! @param now System.getTimer()
     private function restartScan(now as Number) as Void {
-        trace("scan restart, no listed sensor heard for " + ((now - mLastListedMs) / 1000)
+        trace("scan restart, no displayed sensor heard for " + ((now - mLastShownMs) / 1000)
             + " s (restart " + (mFailedRestarts + 1) + " in a row)");
         mRestarts++;
         mFailedRestarts++;
@@ -420,7 +435,7 @@ class RuuviScanner extends Ble.BleDelegate {
     private function logStats(now as Number) as Void {
         trace("scan " + (mScanning ? "on" : "off") + " adverts " + mAdverts + " ruuvi " + mRuuviAdverts
             + " listed " + mListedAdverts + " in " + ((now - mLastStatsMs) / 1000) + " s, restarts "
-            + mRestarts + ", last listed " + ((now - mLastListedMs) / 1000) + " s ago");
+            + mRestarts + ", last displayed " + ((now - mLastShownMs) / 1000) + " s ago");
         mAdverts = 0;
         mRuuviAdverts = 0;
         mListedAdverts = 0;
@@ -449,14 +464,14 @@ class RuuviScanner extends Ble.BleDelegate {
 //! Restart policy of the scan watchdog (see RuuviScanner.tick()).
 module RuuviWatchdog {
 
-    // No broadcast from any listed sensor for this long counts as a stall.
+    // No broadcast from any displayed sensor for this long counts as a stall.
     const STALL_MS = 6000;
     // Time between restarts: RESTART_MIN_MS, doubling with each restart that
     // brings nothing back, up to RESTART_MAX_MS.
     const RESTART_MIN_MS = 10000;
     const RESTART_MAX_MS = 30000;
 
-    //! @param failed Restarts in a row with no listed sensor heard since
+    //! @param failed Restarts in a row with no displayed sensor heard since
     //! @return Minimum time since the last restart before the next one
     function restartInterval(failed as Number) as Number {
         var ms = RESTART_MIN_MS;
@@ -467,12 +482,13 @@ module RuuviWatchdog {
     }
 
     //! @param now           System.getTimer()
-    //! @param lastListedMs  Last broadcast from a listed sensor (or scan start)
+    //! @param lastShownMs   Last broadcast from a displayed sensor (or scan
+    //!                      start, or when one was switched on)
     //! @param lastRestartMs Last restart (or scan start)
     //! @param failed        Restarts in a row with nothing heard since
     //! @return true if the scan should be restarted now
-    function restartDue(now as Number, lastListedMs as Number, lastRestartMs as Number,
+    function restartDue(now as Number, lastShownMs as Number, lastRestartMs as Number,
             failed as Number) as Boolean {
-        return (now - lastListedMs) >= STALL_MS && (now - lastRestartMs) >= restartInterval(failed);
+        return (now - lastShownMs) >= STALL_MS && (now - lastRestartMs) >= restartInterval(failed);
     }
 }
