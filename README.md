@@ -30,6 +30,7 @@ The field shows the one sensor chosen under **Display** in the settings menu
 | `source/RuuviScanner.mc` | BLE scanning and Ruuvi data format 5 decoding |
 | `source/RuuviSettings.mc` | On-device settings menu (sensor list, units) |
 | `source/RuuviConfig.mc` | Sensor list storage, units, helpers |
+| `source/test/RuuviConfigTest.mc` | Unit tests for the sensor list and helpers |
 | `resources/properties/properties.xml` | Unit settings |
 | `resources/settings/settings.xml` | Unit settings panel in Garmin Connect / Express |
 | `resources/strings/strings.xml` | App name and settings labels |
@@ -60,16 +61,38 @@ On the Montana touchscreen the title-bar back arrow needs two taps (the first
 only highlights it).
 
 **Known Montana issue:** after the on-device settings menu closes, the
-firmware does not restart the data field: it shows the app icon, and the
-settings menu will not open again. Re-add the data field (pick RuuviSensor
-for that field again) or restart the Montana. The app never gets control at
-that point, so this cannot be fixed in app code.
+data field may show the app icon instead of data, and the settings menu may
+not open again. Re-add the data field (pick RuuviSensor for that field again)
+or restart the Montana. The cause is not known yet; see below.
 
-To see what the firmware does around the settings menu, create an empty
-`GARMIN/APPS/LOGS/RUUVISENSOR.TXT` (same base name as the `.prg`) on the
-Montana. The app logs `onStart`, `getInitialView`, `getSettingsView`,
-`onSettingsChanged` and `onStop` there, plus any draw or BLE errors, and
-`GARMIN/APPS/LOGS/CIQ_LOG.YML` records crashes.
+### Tracing the settings lifecycle on the Montana
+
+Create an empty `GARMIN/APPS/LOGS/RUUVISENSOR.TXT` (same base name as the
+`.prg`) on the Montana. The app then logs each lifecycle step, stamped with
+`System.getTimer()` and the id of the app instance (its creation time):
+
+```
+RuuviSensor 292628921: new app instance 292628921
+RuuviSensor 292628921: onStart, instance 292628921
+RuuviSensor 292628921: getInitialView, instance 292628921
+RuuviSensor 292628937: view created
+RuuviSensor 292628937: view onShow
+RuuviSensor 292635890: getSettingsView, instance 292628921
+RuuviSensor 292635921: view onHide
+RuuviSensor 292645312: settings main menu onBack
+RuuviSensor 292645312: view onShow
+```
+
+That excerpt is the Connect IQ simulator (SDK 9.2, montana7xx): the settings
+menu runs in the same app instance as the data field, one back press closes
+it, and there is no `onStop`, `onSettingsChanged` or new `getInitialView`.
+Draw and BLE errors are logged too, and `GARMIN/APPS/LOGS/CIQ_LOG.YML`
+records crashes.
+
+In the simulator, use **Settings → Trigger App Settings** to open the menu.
+After the menu closes, the simulator ignores that command until
+**Settings → Timeout App Settings** is used. Garmin's SimpleDataField sample
+behaves the same way, so this is a simulator quirk, not this app.
 
 ## Ruuvi data format 5
 
@@ -107,3 +130,17 @@ monkeyc 9.2 names string constants from their letters/digits plus Java
 `hashCode()`, so two punctuation-only literals with the same hash (e.g. `", "`
 and `"+?"`) abort the build with "Redefinition of label". Avoid
 punctuation-only string literals.
+
+## Unit tests
+
+`(:test)` code is left out of normal builds (the device `.prg` is identical
+with or without it). To run the tests in the simulator (Windows: run
+`monkeydo` from PowerShell or cmd; Git Bash rewrites `/t` into a path):
+
+```
+monkeyc -d montana7xx -f monkey.jungle -o bin/RuuviSensorTest.prg -y <developer_key> --unit-test
+monkeydo bin/RuuviSensorTest.prg montana7xx /t
+```
+
+The tests use the app's Application.Storage and restore the sensor list and
+displayed sensor after each test.
