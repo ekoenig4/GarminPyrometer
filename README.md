@@ -32,8 +32,8 @@ when its font is at least 80% as large as the best grid's, so put the field in
 a wide slot for a single row. Readings use the device's number fonts, like the
 native fields.
 
-The temperature of every listed sensor is also logged to the activity's FIT
-file (see [Activity logging](#activity-logging-fit)).
+The temperature of every displayed sensor is also logged to the activity's
+FIT file (see [Activity logging](#activity-logging-fit)).
 
 ## Layout
 
@@ -69,7 +69,7 @@ file (see [Activity logging](#activity-logging-fit)).
    - **Remove** — delete it from the list.
 5. Back in the main menu, **Display** has an on/off switch per sensor:
    the field shows the switched-on sensors side by side, in list order. New
-   sensors are on. Hidden sensors are still logged.
+   sensors are on. Only switched-on sensors are logged to the activity.
 6. **Temperature unit** (Device setting / °C / °F) and
    **Pressure unit** (hPa / inHg / mmHg) apply to every sensor. *Device
    setting* follows the Montana's own unit setting.
@@ -178,19 +178,21 @@ RuuviSensor 295031544: Balloon 1 heard again after 7 s
 
 ## Activity logging (FIT)
 
-While an activity records, the field writes each listed sensor's temperature
-to the FIT file every record, next to the Montana's own data (the
-`FitContributor` developer fields). Details:
+While an activity records, the field writes the temperature of each sensor
+switched on under **Display** to the FIT file every record, next to the
+Montana's own data (the `FitContributor` developer fields). Hidden sensors are
+not logged. Details:
 
-- One field per sensor in the list when the data field starts (up to 8),
-  shown or not. Field ids 0–7 follow the list order, and each field is named
-  after its sensor in the FIT file (first 16 characters). Garmin Connect
-  labels them "Sensor 1 temperature" … "Sensor 8 temperature".
+- One field per displayed sensor. Switching a sensor on during the activity
+  adds its field from then on; switching it off leaves a gap from then on.
+  Field ids 0–7 follow the sensor's position in the list, and each field is
+  named after its sensor in the FIT file (first 16 characters). Garmin
+  Connect labels them "Sensor 1 temperature" … "Sensor 8 temperature".
 - Always °C, whatever the display unit, with one decimal.
 - When a sensor has not been heard for 60 s (the field shows `---`), FIT's
   invalid value is written, so charts show a gap rather than a stale value.
-- Sensors added during an activity are logged from the next time the data
-  field starts (the next activity, or re-adding the field).
+- Sensors added to the list during an activity are logged once they are
+  displayed, like any other sensor.
 - Garmin Connect generally only charts Connect IQ developer fields for apps
   installed from the Connect IQ store. With a sideloaded `.prg`, the data is
   still in the FIT file (`GARMIN/Activities` on the Montana) and readable by
