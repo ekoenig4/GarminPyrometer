@@ -4,6 +4,8 @@
     - type="datafield"     : SimpleDataField application
     - minApiLevel="3.2.0"  : BluetoothLowEnergy + Application.Properties
     - BluetoothLowEnergy permission is mandatory for Toybox.BluetoothLowEnergy
+    - FitContributor permission: sensor temperatures are logged to the
+      activity's FIT file
 -->
 <iq:manifest version="3" xmlns:iq="http://www.garmin.com/xml/connectiq">
     <iq:application id="fa6a15ae8e004ab197061da1619b091a"
@@ -17,6 +19,7 @@
         </iq:products>
         <iq:permissions>
             <iq:uses-permission id="BluetoothLowEnergy"/>
+            <iq:uses-permission id="FitContributor"/>
         </iq:permissions>
         <iq:languages>
             <iq:language>eng</iq:language>

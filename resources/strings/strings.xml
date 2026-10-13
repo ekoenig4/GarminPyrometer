@@ -11,4 +11,15 @@
     <string id="PressureUnitHpa">hPa (mbar)</string>
     <string id="PressureUnitInHg">inHg</string>
     <string id="PressureUnitMmHg">mmHg</string>
+
+    <!-- FIT logging (Garmin Connect chart titles / labels, see fit/fit.xml) -->
+    <string id="FitTempUnit">°C</string>
+    <string id="FitTemp1">Sensor 1 temperature</string>
+    <string id="FitTemp2">Sensor 2 temperature</string>
+    <string id="FitTemp3">Sensor 3 temperature</string>
+    <string id="FitTemp4">Sensor 4 temperature</string>
+    <string id="FitTemp5">Sensor 5 temperature</string>
+    <string id="FitTemp6">Sensor 6 temperature</string>
+    <string id="FitTemp7">Sensor 7 temperature</string>
+    <string id="FitTemp8">Sensor 8 temperature</string>
 </strings>

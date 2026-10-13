@@ -8,7 +8,7 @@
 //
 // (:test) code is left out of normal builds, so it costs the device nothing.
 // The list tests use the app's real Application.Storage; each one saves the
-// stored sensor list and displayed sensor first and restores them after.
+// stored sensor list first and restores it after.
 //
 import Toybox.Application;
 import Toybox.Lang;
@@ -21,13 +21,11 @@ module RuuviConfigTest {
     const MAC_B = "C0FFEE000001";
     const MAC_C = "C0FFEE000002";
 
-    //! Saves the stored sensor list and displayed sensor, then clears them.
-    //! @return [devices, active] as stored before the test
+    //! Saves the stored sensor list, then clears it.
+    //! @return [devices] as stored before the test
     function begin() as Array {
-        var saved = [Application.Storage.getValue(RuuviConfig.DEVICES_KEY),
-                     Application.Storage.getValue(RuuviConfig.ACTIVE_KEY)];
+        var saved = [Application.Storage.getValue(RuuviConfig.DEVICES_KEY)];
         Application.Storage.deleteValue(RuuviConfig.DEVICES_KEY);
-        Application.Storage.deleteValue(RuuviConfig.ACTIVE_KEY);
         return saved;
     }
 
@@ -35,7 +33,6 @@ module RuuviConfigTest {
     //! @param saved Return value of begin()
     function end(saved as Array) as Void {
         restore(RuuviConfig.DEVICES_KEY, saved[0]);
-        restore(RuuviConfig.ACTIVE_KEY, saved[1]);
     }
 
     //! @param key   Storage key
@@ -71,12 +68,13 @@ module RuuviConfigTest {
     }
 
     (:test)
-    function displayedIndexFallsBackToFirst(logger as Logger) as Boolean {
-        var devices = [[MAC_A, "a", 1], [MAC_B, "b", 1]] as Array<Array>;
-        return RuuviConfig.displayedIndex(devices, MAC_B) == 1
-            && RuuviConfig.displayedIndex(devices, "") == 0
-            && RuuviConfig.displayedIndex(devices, MAC_C) == 0
-            && RuuviConfig.displayedIndex([] as Array<Array>, MAC_A) == -1;
+    function visibleIndicesKeepsListOrder(logger as Logger) as Boolean {
+        var devices = [[MAC_A, "a", 1, false], [MAC_B, "b", 1, true], [MAC_C, "c", 1, true]] as Array<Array>;
+        var shown = RuuviConfig.visibleIndices(devices);
+        var none = RuuviConfig.visibleIndices([[MAC_A, "a", 1, false]] as Array<Array>);
+        return shown.size() == 2 && shown[0] == 1 && shown[1] == 2
+            && none.size() == 0
+            && RuuviConfig.visibleIndices([] as Array<Array>).size() == 0;
     }
 
     (:test)
@@ -121,13 +119,27 @@ module RuuviConfigTest {
             [MAC_B, "short row"],
             [MAC_C, 42, 1],          // name is not a string
             [MAC_B, "b", "1"],       // show is not a number
-            [MAC_C, "c", 2, "extra"] // extra fields are dropped
+            [MAC_C, "c", 2, false, "extra"] // extra fields are dropped
         ]);
         var devices = RuuviConfig.loadDevices();
         logger.debug("loaded " + devices.toString());
         var ok = devices.size() == 2
             && macs().equals(MAC_A + "," + MAC_C)
-            && devices[1].size() == 3;
+            && devices[1].size() == 4
+            && devices[1][RuuviConfig.F_VISIBLE] == false;
+        end(saved);
+        return ok;
+    }
+
+    (:test)
+    function loadDevicesOldRowsAreVisible(logger as Logger) as Boolean {
+        var saved = begin();
+        // Rows saved before the visible flag existed, and a bad flag.
+        Application.Storage.setValue(RuuviConfig.DEVICES_KEY, [[MAC_A, "a", 1], [MAC_B, "b", 1, 7]]);
+        var devices = RuuviConfig.loadDevices();
+        var ok = devices.size() == 2
+            && devices[0][RuuviConfig.F_VISIBLE] == true
+            && devices[1][RuuviConfig.F_VISIBLE] == true;
         end(saved);
         return ok;
     }
@@ -150,7 +162,8 @@ module RuuviConfigTest {
         var dev = RuuviConfig.getDevice(MAC_B);
         ok = ok && dev != null
             && (dev[RuuviConfig.F_NAME] as String).equals("Balloon 2")
-            && dev[RuuviConfig.F_SHOW] == RuuviConfig.SHOW_TEMPERATURE;
+            && dev[RuuviConfig.F_SHOW] == RuuviConfig.SHOW_TEMPERATURE
+            && dev[RuuviConfig.F_VISIBLE] == true;
         end(saved);
         return ok;
     }
@@ -208,46 +221,23 @@ module RuuviConfigTest {
     }
 
     (:test)
-    function removeDisplayedSensorClearsActive(logger as Logger) as Boolean {
-        var saved = begin();
-        RuuviConfig.addDevice(MAC_A, "a");
-        RuuviConfig.addDevice(MAC_B, "b");
-        RuuviConfig.setActive(MAC_A);
-        RuuviConfig.removeDevice(MAC_B);
-        var ok = RuuviConfig.getActive().equals(MAC_A);
-        RuuviConfig.removeDevice(MAC_A);
-        ok = ok && RuuviConfig.getActive().equals("");
-        end(saved);
-        return ok;
-    }
-
-    (:test)
     function updateDeviceChangesOneField(logger as Logger) as Boolean {
         var saved = begin();
         RuuviConfig.addDevice(MAC_A, "a");
         RuuviConfig.addDevice(MAC_B, "b");
         RuuviConfig.updateDevice(MAC_B, RuuviConfig.F_SHOW, RuuviConfig.SHOW_PRESSURE);
         RuuviConfig.updateDevice(MAC_B, RuuviConfig.F_NAME, "renamed");
+        RuuviConfig.updateDevice(MAC_B, RuuviConfig.F_VISIBLE, false);
         RuuviConfig.updateDevice(MAC_C, RuuviConfig.F_NAME, "not listed");
         var a = RuuviConfig.getDevice(MAC_A) as Array;
         var b = RuuviConfig.getDevice(MAC_B) as Array;
         var ok = (b[RuuviConfig.F_NAME] as String).equals("renamed")
             && b[RuuviConfig.F_SHOW] == RuuviConfig.SHOW_PRESSURE
+            && b[RuuviConfig.F_VISIBLE] == false
+            && a[RuuviConfig.F_VISIBLE] == true
             && (a[RuuviConfig.F_NAME] as String).equals("a")
             && a[RuuviConfig.F_SHOW] == RuuviConfig.SHOW_TEMPERATURE
             && RuuviConfig.getDevice(MAC_C) == null;
-        end(saved);
-        return ok;
-    }
-
-    (:test)
-    function activeRoundTrip(logger as Logger) as Boolean {
-        var saved = begin();
-        var ok = RuuviConfig.getActive().equals("");
-        RuuviConfig.setActive(MAC_B);
-        ok = ok && RuuviConfig.getActive().equals(MAC_B);
-        Application.Storage.setValue(RuuviConfig.ACTIVE_KEY, 7);   // wrong type
-        ok = ok && RuuviConfig.getActive().equals("");
         end(saved);
         return ok;
     }

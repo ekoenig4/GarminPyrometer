@@ -16,24 +16,41 @@ its own name and choice of what to show.
 | Pressure | `Balloon 1` | `1013 hPa` |
 | All | `Balloon 1` | `T:23.5 H:61 P:1013` |
 
-The field shows the one sensor chosen under **Display** in the settings menu
-(the first in the list until you choose one).
+The field shows the sensors switched on under **Display** in the settings
+menu side by side, each with its own header and value:
+
+```
++------------+------------+------------+
+| Balloon 1  | Burner     | Envelope   |
+|  23.5 °C   |  412.0 °C  |   43 %RH   |
++------------+------------+------------+
+```
+
+The cells are arranged in the grid that gives the largest readable value in
+the data field slot. A grid with no empty cells (e.g. 3 across) is preferred
+when its font is at least 80% as large as the best grid's, so put the field in
+a wide slot for a single row. Readings use the device's number fonts, like the
+native fields.
+
+The temperature of every listed sensor is also logged to the activity's FIT
+file (see [Activity logging](#activity-logging-fit)).
 
 ## Layout
 
 | File | Purpose |
 | --- | --- |
-| `manifest.xml` | App id, `datafield` type, `montana7xx`, `BluetoothLowEnergy` permission |
+| `manifest.xml` | App id, `datafield` type, `montana7xx`, `BluetoothLowEnergy` and `FitContributor` permissions |
 | `monkey.jungle` | Build file |
 | `source/RuuviSensorApp.mc` | Entry point; starts BLE (data field mode only), caches units |
-| `source/RuuviSensorView.mc` | Data field view, drawn like the native fields |
+| `source/RuuviSensorView.mc` | Data field view (sensors side by side) and FIT logging |
 | `source/RuuviScanner.mc` | BLE scanning and Ruuvi data format 5 decoding |
 | `source/RuuviSettings.mc` | On-device settings menu (sensor list, units) |
 | `source/RuuviConfig.mc` | Sensor list storage, units, helpers |
 | `source/test/RuuviConfigTest.mc` | Unit tests for the sensor list and helpers |
 | `resources/properties/properties.xml` | Unit settings |
 | `resources/settings/settings.xml` | Unit settings panel in Garmin Connect / Express |
-| `resources/strings/strings.xml` | App name and settings labels |
+| `resources/strings/strings.xml` | App name, settings and FIT labels |
+| `resources/fit/fit.xml` | FIT field descriptions for Garmin Connect charts |
 
 ## Setting up sensors (on the device)
 
@@ -47,12 +64,12 @@ The field shows the one sensor chosen under **Display** in the settings menu
    `Ruuvi XXXX` (last 4 hex digits of the MAC).
 4. Your sensors are listed below **+ Add sensor**. Tap one for:
    - **Show** — Temperature, Humidity, Pressure or All.
-   - **Rename** — the name shown as the field's header.
+   - **Rename** — the name shown as the sensor's header (and its FIT field
+     name).
    - **Remove** — delete it from the list.
-5. Back in the main menu, **Display** picks the sensor the field shows.
-   The choice is saved, so the field keeps showing that sensor every time it
-   starts. Until you choose one, or after removing the displayed sensor, the
-   field shows the first sensor in the list.
+5. Back in the main menu, **Display** has an on/off switch per sensor:
+   the field shows the switched-on sensors side by side, in list order. New
+   sensors are on. Hidden sensors are still logged.
 6. **Temperature unit** (Device setting / °C / °F) and
    **Pressure unit** (hPa / inHg / mmHg) apply to every sensor. *Device
    setting* follows the Montana's own unit setting.
@@ -117,8 +134,29 @@ Manufacturer data (company `0x0499`) after the company id:
 | `SCAN 2 found` | Sensor not heard yet; 2 Ruuvi tags heard in the last 30 s |
 | `SCAN OFF` / `SCAN ERR n` | Not scanning (retrying) / the system refused to scan |
 | `NO SENSORS …` | The sensor list is empty (status as above) |
+| `NONE SHOWN` | Every sensor is switched off under **Display** |
 | `STARTING` | First 3 s after the field starts; Bluetooth is not touched yet |
 | `NO BLE` | Product has no Connect IQ BLE support |
+
+## Activity logging (FIT)
+
+While an activity records, the field writes each listed sensor's temperature
+to the FIT file every record, next to the Montana's own data (the
+`FitContributor` developer fields). Details:
+
+- One field per sensor in the list when the data field starts (up to 8),
+  shown or not. Field ids 0–7 follow the list order, and each field is named
+  after its sensor in the FIT file (first 16 characters). Garmin Connect
+  labels them "Sensor 1 temperature" … "Sensor 8 temperature".
+- Always °C, whatever the display unit, with one decimal.
+- When a sensor has not been heard for 60 s (the field shows `---`), FIT's
+  invalid value is written, so charts show a gap rather than a stale value.
+- Sensors added during an activity are logged from the next time the data
+  field starts (the next activity, or re-adding the field).
+- Garmin Connect generally only charts Connect IQ developer fields for apps
+  installed from the Connect IQ store. With a sideloaded `.prg`, the data is
+  still in the FIT file (`GARMIN/Activities` on the Montana) and readable by
+  FIT tools.
 
 ## Building
 

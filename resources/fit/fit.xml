@@ -1,0 +1,34 @@
+<!--
+    FIT developer fields written by the data field (RuuviSensorView): the
+    temperature (°C, every record) of each listed sensor. The id is the
+    sensor's position in the list when the activity's field started, so
+    "Sensor 1" is the first sensor under Sensors. Garmin Connect uses these
+    titles and labels; the FIT file itself also names each field after the
+    sensor.
+-->
+<fitContributions>
+    <fitField id="0" displayInChart="true" sortOrder="0" precision="1"
+              chartTitle="@Strings.FitTemp1" dataLabel="@Strings.FitTemp1"
+              unitLabel="@Strings.FitTempUnit" fillColor="E6194B"/>
+    <fitField id="1" displayInChart="true" sortOrder="1" precision="1"
+              chartTitle="@Strings.FitTemp2" dataLabel="@Strings.FitTemp2"
+              unitLabel="@Strings.FitTempUnit" fillColor="3CB44B"/>
+    <fitField id="2" displayInChart="true" sortOrder="2" precision="1"
+              chartTitle="@Strings.FitTemp3" dataLabel="@Strings.FitTemp3"
+              unitLabel="@Strings.FitTempUnit" fillColor="4363D8"/>
+    <fitField id="3" displayInChart="true" sortOrder="3" precision="1"
+              chartTitle="@Strings.FitTemp4" dataLabel="@Strings.FitTemp4"
+              unitLabel="@Strings.FitTempUnit" fillColor="F58231"/>
+    <fitField id="4" displayInChart="true" sortOrder="4" precision="1"
+              chartTitle="@Strings.FitTemp5" dataLabel="@Strings.FitTemp5"
+              unitLabel="@Strings.FitTempUnit" fillColor="911EB4"/>
+    <fitField id="5" displayInChart="true" sortOrder="5" precision="1"
+              chartTitle="@Strings.FitTemp6" dataLabel="@Strings.FitTemp6"
+              unitLabel="@Strings.FitTempUnit" fillColor="42D4F4"/>
+    <fitField id="6" displayInChart="true" sortOrder="6" precision="1"
+              chartTitle="@Strings.FitTemp7" dataLabel="@Strings.FitTemp7"
+              unitLabel="@Strings.FitTempUnit" fillColor="F032E6"/>
+    <fitField id="7" displayInChart="true" sortOrder="7" precision="1"
+              chartTitle="@Strings.FitTemp8" dataLabel="@Strings.FitTemp8"
+              unitLabel="@Strings.FitTempUnit" fillColor="9A6324"/>
+</fitContributions>

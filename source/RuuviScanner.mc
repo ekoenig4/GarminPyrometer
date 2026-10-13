@@ -37,11 +37,8 @@ class RuuviScanner extends Ble.BleDelegate {
     private const RUUVI_COMPANY_HI = 0x04;
     private const RUUVI_FORMAT_5   = 0x05;
 
-    // Sensor list rows [mac, name, show] (see RuuviConfig).
+    // Sensor list rows [mac, name, show, visible] (see RuuviConfig).
     private var mDevices as Array<Array>;
-
-    // MAC chosen under Display ("" if none: the first sensor is shown).
-    private var mActive as String = "";
 
     // Latest readings of listed tags: mac => [tempC, humidity, hPa, timerMs].
     private var mReadings as Dictionary<String, Array>;
@@ -61,7 +58,6 @@ class RuuviScanner extends Ble.BleDelegate {
     function initialize() {
         BleDelegate.initialize();
         mDevices = RuuviConfig.loadDevices();
-        mActive = RuuviConfig.getActive();
         mReadings = {} as Dictionary<String, Array>;
         mSeen = {} as Dictionary<String, Array>;
         mLastReloadMs = System.getTimer();
@@ -85,7 +81,6 @@ class RuuviScanner extends Ble.BleDelegate {
     //! Re-reads the sensor list (after a settings change).
     function reloadDevices() as Void {
         mDevices = RuuviConfig.loadDevices();
-        mActive = RuuviConfig.getActive();
         mLastReloadMs = System.getTimer();
     }
 
@@ -110,14 +105,9 @@ class RuuviScanner extends Ble.BleDelegate {
         }
     }
 
-    //! @return Sensor list rows [mac, name, show] (read-only)
+    //! @return Sensor list rows [mac, name, show, visible] (read-only)
     function getDevices() as Array<Array> {
         return mDevices;
-    }
-
-    //! @return MAC chosen under Display, or "" if none was chosen
-    function getActive() as String {
-        return mActive;
     }
 
     //! @param mac 12 hex digits
