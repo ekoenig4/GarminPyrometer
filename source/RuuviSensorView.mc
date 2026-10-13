@@ -59,6 +59,17 @@ class RuuviSensorView extends WatchUi.DataField {
         if (idx >= 0) {
             mLabel = devices[idx][RuuviConfig.F_NAME] as String;
         }
+        trace("view created");
+    }
+
+    //! The field is shown (also when the settings menu above it closes).
+    function onShow() as Void {
+        trace("view onShow");
+    }
+
+    //! The field is hidden (also when the settings menu opens above it).
+    function onHide() as Void {
+        trace("view onHide");
     }
 
     //! Called once per second by the activity. Drives the scanner and

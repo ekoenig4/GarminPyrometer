@@ -97,6 +97,14 @@ class RuuviMainMenuDelegate extends WatchUi.Menu2InputDelegate {
                 new RuuviChoiceMenuDelegate(:pressureUnit, null, item, null), WatchUi.SLIDE_LEFT);
         }
     }
+
+    //! Back from the main menu closes the settings (default Menu2
+    //! behaviour). Logged so the device log shows how many back presses
+    //! actually reach the app.
+    function onBack() as Void {
+        trace("settings main menu onBack");
+        Menu2InputDelegate.onBack();
+    }
 }
 
 // -------------------------------------------------------------------------
