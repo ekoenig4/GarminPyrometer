@@ -102,6 +102,18 @@ class RuuviSensorView extends WatchUi.DataField {
     //! fits the remaining space, in the device's data field colours.
     //! @param dc Device context
     function onUpdate(dc as Graphics.Dc) as Void {
+        try {
+            draw(dc);
+        } catch (e) {
+            // An uncaught error here ends the data field (it then shows the
+            // app icon); log it and leave this frame blank instead.
+            System.println("RuuviSensor: draw error: " + e.getErrorMessage());
+        }
+    }
+
+    //! Does the drawing for onUpdate().
+    //! @param dc Device context
+    private function draw(dc as Graphics.Dc) as Void {
         var bg = getBackgroundColor();
         var fg = (bg == Graphics.COLOR_BLACK) ? Graphics.COLOR_WHITE : Graphics.COLOR_BLACK;
         dc.setColor(fg, bg);

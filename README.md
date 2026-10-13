@@ -65,6 +65,12 @@ settings menu will not open again. Re-add the data field (pick RuuviSensor
 for that field again) or restart the Montana. The app never gets control at
 that point, so this cannot be fixed in app code.
 
+To see what the firmware does around the settings menu, create an empty
+`GARMIN/APPS/LOGS/RUUVISENSOR.TXT` (same base name as the `.prg`) on the
+Montana. The app logs `onStart`, `getInitialView`, `getSettingsView`,
+`onSettingsChanged` and `onStop` there, plus any draw or BLE errors, and
+`GARMIN/APPS/LOGS/CIQ_LOG.YML` records crashes.
+
 ## Ruuvi data format 5
 
 Manufacturer data (company `0x0499`) after the company id:

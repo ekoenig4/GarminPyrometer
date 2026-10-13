@@ -150,6 +150,11 @@ class RuuviScanner extends Ble.BleDelegate {
     //! @param scanState New scan state
     //! @param status    Ble.STATUS_SUCCESS on success
     function onScanStateChange(scanState as Ble.ScanState, status as Ble.Status) as Void {
+        if (mEnded) {
+            // Late confirmation of the final SCAN_STATE_OFF: nothing to update.
+            mScanning = false;
+            return;
+        }
         mScanning = (status == Ble.STATUS_SUCCESS && scanState == Ble.SCAN_STATE_SCANNING);
         if (status == Ble.STATUS_SUCCESS) {
             mScanError = null;
@@ -162,6 +167,9 @@ class RuuviScanner extends Ble.BleDelegate {
     //! Decodes every Ruuvi broadcast in the batch.
     //! @param scanResults Iterator of Ble.ScanResult
     function onScanResults(scanResults as Ble.Iterator) as Void {
+        if (mEnded) {
+            return;   // results still queued when the app stopped
+        }
         var now = System.getTimer();
         for (var result = scanResults.next(); result != null; result = scanResults.next()) {
             if (!(result instanceof Ble.ScanResult)) {
