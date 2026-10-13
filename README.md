@@ -183,16 +183,20 @@ switched on under **Display** to the FIT file every record, next to the
 Montana's own data (the `FitContributor` developer fields). Hidden sensors are
 not logged. Details:
 
-- One field per displayed sensor. Switching a sensor on during the activity
-  adds its field from then on; switching it off leaves a gap from then on.
-  Field ids 0–7 follow the sensor's position in the list, and each field is
-  named after its sensor in the FIT file (first 16 characters). Garmin
-  Connect labels them "Sensor 1 temperature" … "Sensor 8 temperature".
+- When the data field starts, it creates one FIT field per sensor in the
+  list (up to 8), displayed or not; no fields are created during the
+  activity. Hidden sensors' fields hold only invalid values (empty).
+  Switching a sensor on or off under Display takes effect at once: it is
+  logged from then on, or gets a gap from then on. Field ids 0–7 follow the
+  sensor's position in the list, and each field is named after its sensor
+  in the FIT file (first 16 characters). Garmin Connect labels them
+  "Sensor 1 temperature" … "Sensor 8 temperature".
 - Always °C, whatever the display unit, with one decimal.
 - When a sensor has not been heard for 60 s (the field shows `---`), FIT's
   invalid value is written, so charts show a gap rather than a stale value.
-- Sensors added to the list during an activity are logged once they are
-  displayed, like any other sensor.
+- Sensors added to the list during an activity have no field yet: they are
+  logged from the next time the data field starts (the next activity, or
+  re-adding the field).
 - Garmin Connect generally only charts Connect IQ developer fields for apps
   installed from the Connect IQ store. With a sideloaded `.prg`, the data is
   still in the FIT file (`GARMIN/Activities` on the Montana) and readable by

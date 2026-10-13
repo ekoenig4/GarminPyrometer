@@ -22,7 +22,7 @@
 // with the unit in a smaller font beside them, like the native fields.
 //
 // The temperature of every displayed sensor is also written to the
-// activity's FIT file (see logTemperatures()).
+// activity's FIT file (see setupFitFields() and logTemperatures()).
 //
 import Toybox.Activity;
 import Toybox.FitContributor;
@@ -66,30 +66,23 @@ class RuuviSensorView extends WatchUi.DataField {
     // sensor, or a single status cell.
     private var mCells as Array<Array>;
 
-    // FIT temperature fields created so far, with the MAC each logs and its
-    // field id (the sensor's list position when it was created).
+    // FIT temperature fields (id = list position) and the MAC each logs.
     private var mFitFields as Array<FitContributor.Field>;
     private var mFitMacs as Array<String>;
-    private var mFitIds as Array<Number>;
 
     // Float with the bit pattern 0xFFFFFFFF, FIT's "invalid" float32 value:
     // logged while a sensor has no reading.
     private var mFitInvalid as Float;
 
-    //! Constructor. Creates the FIT fields for the sensors displayed now.
+    //! Constructor. Creates the FIT fields for the sensors listed now.
     function initialize() {
         DataField.initialize();
         mCells = [statusCell(APP_LABEL, "")] as Array<Array>;
         mFitFields = [] as Array<FitContributor.Field>;
         mFitMacs = [] as Array<String>;
-        mFitIds = [] as Array<Number>;
         mFitInvalid = [0xFF, 0xFF, 0xFF, 0xFF]b.decodeNumber(Lang.NUMBER_FORMAT_FLOAT, {}) as Float;
-        var devices = RuuviConfig.loadDevices();
-        var shown = RuuviConfig.visibleIndices(devices);
-        for (var i = 0; i < shown.size(); i++) {
-            fitFieldFor(devices, shown[i]);
-        }
-        trace("view created, logging " + mFitFields.size() + " sensors");
+        setupFitFields(RuuviConfig.loadDevices());
+        trace("view created, " + mFitFields.size() + " FIT fields");
     }
 
     //! The field is shown (also when the settings menu above it closes).
@@ -165,43 +158,25 @@ class RuuviSensorView extends WatchUi.DataField {
     // FIT logging
     // ---------------------------------------------------------------------
 
-    //! Returns the FIT temperature field (°C, record level) of a sensor,
-    //! creating it the first time. The field id is the sensor's list
-    //! position, matching the fitField entries in resources/fit/fit.xml (the
-    //! lowest free id if that one is taken), and the field name is the
-    //! sensor's name.
+    //! Creates one FIT temperature field (°C, record level) per listed
+    //! sensor, displayed or not, once when the field starts: fields are only
+    //! created here, as in Garmin's samples, never during the activity. The
+    //! field id is the sensor's list position, matching the fitField entries
+    //! in resources/fit/fit.xml, and the field name is the sensor's name.
+    //! Which fields get values is decided by logTemperatures().
     //! @param devices Sensor list
-    //! @param idx     Index of the sensor in devices
-    //! @return Index in mFitFields, or -1 if no field could be created
-    private function fitFieldFor(devices as Array<Array>, idx as Number) as Number {
-        var mac = devices[idx][RuuviConfig.F_MAC] as String;
-        for (var i = 0; i < mFitMacs.size(); i++) {
-            if (mac.equals(mFitMacs[i])) {
-                return i;
+    private function setupFitFields(devices as Array<Array>) as Void {
+        for (var i = 0; i < devices.size() && i < RuuviConfig.MAX_DEVICES; i++) {
+            try {
+                var field = createField(fitFieldName(devices[i][RuuviConfig.F_NAME] as String, i), i,
+                    FitContributor.DATA_TYPE_FLOAT,
+                    { :mesgType => FitContributor.MESG_TYPE_RECORD, :units => "°C" });
+                field.setData(mFitInvalid);
+                mFitFields.add(field);
+                mFitMacs.add(devices[i][RuuviConfig.F_MAC] as String);
+            } catch (e) {
+                System.println("RuuviSensor: cannot create FIT field " + i + ": " + e.getErrorMessage());
             }
-        }
-        var id = (mFitIds.indexOf(idx) < 0) ? idx : -1;
-        for (var free = 0; id < 0 && free < RuuviConfig.MAX_DEVICES; free++) {
-            if (mFitIds.indexOf(free) < 0) {
-                id = free;
-            }
-        }
-        if (id < 0 || id >= RuuviConfig.MAX_DEVICES) {
-            return -1;   // all fit.xml ids used (sensors replaced mid-activity)
-        }
-        try {
-            var field = createField(fitFieldName(devices[idx][RuuviConfig.F_NAME] as String, id), id,
-                FitContributor.DATA_TYPE_FLOAT,
-                { :mesgType => FitContributor.MESG_TYPE_RECORD, :units => "°C" });
-            field.setData(mFitInvalid);
-            mFitFields.add(field);
-            mFitMacs.add(mac);
-            mFitIds.add(id);
-            trace("FIT field " + id + " created for " + devices[idx][RuuviConfig.F_NAME]);
-            return mFitFields.size() - 1;
-        } catch (e) {
-            System.println("RuuviSensor: cannot create FIT field " + id + ": " + e.getErrorMessage());
-            return -1;
         }
     }
 
@@ -219,15 +194,12 @@ class RuuviSensorView extends WatchUi.DataField {
     //! Logs the displayed sensors: each FIT field gets its sensor's latest
     //! temperature (°C), or FIT's invalid value (a gap) while the sensor is
     //! switched off under Display, removed, or not heard for LOST_DATA_MS.
-    //! A sensor switched on during the activity gets its field then.
+    //! Switching a sensor on or off takes effect at once; a sensor added to
+    //! the list during the activity has no field until the field restarts.
     //! @param scanner Scanner
     //! @param now     System.getTimer()
     private function logTemperatures(scanner as RuuviScanner, now as Number) as Void {
         var devices = scanner.getDevices();
-        var shown = RuuviConfig.visibleIndices(devices);
-        for (var i = 0; i < shown.size(); i++) {
-            fitFieldFor(devices, shown[i]);
-        }
         for (var i = 0; i < mFitFields.size(); i++) {
             var idx = RuuviConfig.findDevice(devices, mFitMacs[i]);
             var reading = (idx >= 0 && devices[idx][RuuviConfig.F_VISIBLE] == true)
