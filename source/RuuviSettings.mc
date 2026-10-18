@@ -6,7 +6,7 @@
 // variable-length list, so the sensor list is edited here. Menu tree:
 //
 //   RuuviSensor
-//   +-- Display           -> <sensor>: the one sensor the field shows
+//   +-- Display           -> <sensor> on/off: the sensors the field shows
 //   +-- Sensors           (own sub-menu so the list is clearly separate)
 //   |   +-- + Add sensor  -> Ruuvi tags recently heard by the data field
 //   |   +-- <sensor> ...  (one entry per listed sensor)
@@ -34,11 +34,13 @@ function sensorCountText() as String {
     return RuuviConfig.loadDevices().size() + " of " + RuuviConfig.MAX_DEVICES + " used";
 }
 
-//! @return Name of the displayed sensor, or "No sensors"
+//! @return Shown sensor count text, e.g. "2 of 3 shown", or "No sensors"
 function displayText() as String {
     var devices = RuuviConfig.loadDevices();
-    var idx = RuuviConfig.displayedIndex(devices, RuuviConfig.getActive());
-    return (idx >= 0) ? (devices[idx][RuuviConfig.F_NAME] as String) : "No sensors";
+    if (devices.size() == 0) {
+        return "No sensors";
+    }
+    return RuuviConfig.visibleIndices(devices).size() + " of " + devices.size() + " shown";
 }
 
 //! Sub-label of a sensor's menu item, e.g. "Temperature, BBF3".
@@ -70,6 +72,17 @@ class RuuviMainMenu extends WatchUi.Menu2 {
                 RuuviConfig.getNumber(RuuviConfig.PRESSURE_UNIT_KEY, RuuviConfig.PRESSURE_HPA)),
             :pressureUnit, null));
     }
+
+    //! Refreshes the Display count when a sub-menu closes (adding or
+    //! removing a sensor changes it).
+    function onShow() as Void {
+        Menu2.onShow();
+        var idx = findItemById(:display);
+        var item = (idx >= 0) ? getItem(idx) : null;
+        if (item != null) {
+            item.setSubLabel(displayText());
+        }
+    }
 }
 
 class RuuviMainMenuDelegate extends WatchUi.Menu2InputDelegate {
@@ -97,20 +110,26 @@ class RuuviMainMenuDelegate extends WatchUi.Menu2InputDelegate {
                 new RuuviChoiceMenuDelegate(:pressureUnit, null, item, null), WatchUi.SLIDE_LEFT);
         }
     }
+
+    //! Back from the main menu closes the settings (default Menu2
+    //! behaviour). Logged so the device log shows how many back presses
+    //! actually reach the app.
+    function onBack() as Void {
+        trace("settings main menu onBack");
+        Menu2InputDelegate.onBack();
+    }
 }
 
 // -------------------------------------------------------------------------
-// Display menu: which sensor the field shows
+// Display menu: which sensors the field shows (side by side)
 // -------------------------------------------------------------------------
 
 class RuuviDisplayMenu extends WatchUi.Menu2 {
 
-    //! Every listed sensor (item id = MAC); the one shown is marked
-    //! "Selected".
+    //! One on/off toggle per listed sensor (item id = MAC).
     function initialize() {
         Menu2.initialize({ :title => "Display" });
         var devices = RuuviConfig.loadDevices();
-        var shown = RuuviConfig.displayedIndex(devices, RuuviConfig.getActive());
 
         if (devices.size() == 0) {
             addItem(new WatchUi.MenuItem("No sensors", "Add one under Sensors", :none, null));
@@ -118,8 +137,8 @@ class RuuviDisplayMenu extends WatchUi.Menu2 {
         }
         for (var i = 0; i < devices.size(); i++) {
             var mac = devices[i][RuuviConfig.F_MAC] as String;
-            var sub = (i == shown) ? "Selected" : RuuviConfig.formatMac(mac);
-            addItem(new WatchUi.MenuItem(devices[i][RuuviConfig.F_NAME] as String, sub, mac, null));
+            addItem(new WatchUi.ToggleMenuItem(devices[i][RuuviConfig.F_NAME] as String,
+                RuuviConfig.formatMac(mac), mac, devices[i][RuuviConfig.F_VISIBLE] == true, null));
         }
     }
 }
@@ -134,16 +153,18 @@ class RuuviDisplayMenuDelegate extends WatchUi.Menu2InputDelegate {
         mItem = item;
     }
 
-    //! Stores the chosen sensor and returns.
+    //! Stores a sensor's new on/off state; the menu stays open so several
+    //! sensors can be switched. Back returns to the main menu.
     //! @param item Selected item (id = MAC, or :none when the list is empty)
     function onSelect(item as WatchUi.MenuItem) as Void {
         var id = item.getId();
-        if (id instanceof String) {
-            RuuviConfig.setActive(id);
+        if (id instanceof String && item instanceof WatchUi.ToggleMenuItem) {
+            RuuviConfig.updateDevice(id, RuuviConfig.F_VISIBLE, item.isEnabled());
             mItem.setSubLabel(displayText());
             getApp().applySettings();
+        } else {
+            WatchUi.popView(WatchUi.SLIDE_RIGHT);
         }
-        WatchUi.popView(WatchUi.SLIDE_RIGHT);
     }
 }
 

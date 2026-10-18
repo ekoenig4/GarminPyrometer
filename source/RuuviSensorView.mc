@@ -1,21 +1,31 @@
 //
 // RuuviSensorView.mc
 //
-// Data field showing the sensors in the RuuviSensor list. The header is the
-// sensor's name and the value is the quantity chosen in its "Show" setting:
+// Data field showing the sensors in the RuuviSensor list side by side. Each
+// visible sensor (chosen under Display in the settings menu) gets a cell
+// with its name as the header and the quantity chosen in its "Show" setting
+// as the value:
 //
-//     header      value
-//     Balloon 1   23.5 °C                (Show = Temperature, the default)
-//     Balloon 1   T:23.5 H:61 P:1013     (Show = All)
-//     Balloon 2   SCAN 3 found           (not heard yet)
-//     Balloon 3   ---                    (no broadcast for 60 s)
+//     +------------+------------+------------+
+//     | Balloon 1  | Balloon 2  | Burner     |
+//     |  23.5 °C   |   61 %RH   |  SCAN 3 found
+//     +------------+------------+------------+
 //
-// The field is drawn by hand (DataField + onUpdate) so single readings use
-// the device's number fonts with the unit in a smaller font beside them, like
-// the native fields. The field shows the one sensor chosen under Display in
-// the settings menu (the first in the list if none is chosen).
+//     23.5 °C               Show = Temperature (the default)
+//     T:23.5 H:61 P:1013    Show = All
+//     SCAN 3 found          not heard yet
+//     ---                   no broadcast for 60 s
+//
+// The cells are laid out in the grid (columns x rows) that gives the
+// largest value font in the space the field has. The field is drawn by hand
+// (DataField + onUpdate) so single readings use the device's number fonts
+// with the unit in a smaller font beside them, like the native fields.
+//
+// The temperature of every displayed sensor is also written to the
+// activity's FIT file (see setupFitFields() and logTemperatures()).
 //
 import Toybox.Activity;
+import Toybox.FitContributor;
 import Toybox.Graphics;
 import Toybox.Lang;
 import Toybox.System;
@@ -25,7 +35,7 @@ class RuuviSensorView extends WatchUi.DataField {
 
     // Readings older than this are flagged with "?" (tag went quiet)...
     private const STALE_DATA_MS = 30000;
-    // ...and older than this are replaced by "---".
+    // ...and older than this are replaced by "---" (and not logged).
     private const LOST_DATA_MS = 60000;
 
     // Header when the list is empty.
@@ -45,63 +55,171 @@ class RuuviSensorView extends WatchUi.DataField {
         Graphics.FONT_TINY, Graphics.FONT_XTINY
     ];
 
-    // What onUpdate() draws, prepared by compute().
-    private var mLabel as String = APP_LABEL;  // header
-    private var mValue as String = "";         // main value
-    private var mUnit as String = "";          // unit drawn after a numeric value
-    private var mNumeric as Boolean = false;   // mValue is a plain number
+    // A cell is [label, value, unit, numeric]: header, main value, unit drawn
+    // after a numeric value, and whether the value is a plain number.
+    private const C_LABEL = 0;
+    private const C_VALUE = 1;
+    private const C_UNIT = 2;
+    private const C_NUMERIC = 3;
 
-    //! Constructor.
+    // What onUpdate() draws, prepared by compute(): one cell per visible
+    // sensor, or a single status cell.
+    private var mCells as Array<Array>;
+
+    // FIT temperature fields (id = list position) and the MAC each logs.
+    private var mFitFields as Array<FitContributor.Field>;
+    private var mFitMacs as Array<String>;
+
+    // Float with the bit pattern 0xFFFFFFFF, FIT's "invalid" float32 value:
+    // logged while a sensor has no reading.
+    private var mFitInvalid as Float;
+
+    //! Constructor. Creates the FIT fields for the sensors listed now.
     function initialize() {
         DataField.initialize();
-        var devices = RuuviConfig.loadDevices();
-        var idx = RuuviConfig.displayedIndex(devices, RuuviConfig.getActive());
-        if (idx >= 0) {
-            mLabel = devices[idx][RuuviConfig.F_NAME] as String;
-        }
+        mCells = [statusCell(APP_LABEL, "")] as Array<Array>;
+        mFitFields = [] as Array<FitContributor.Field>;
+        mFitMacs = [] as Array<String>;
+        mFitInvalid = [0xFF, 0xFF, 0xFF, 0xFF]b.decodeNumber(Lang.NUMBER_FORMAT_FLOAT, {}) as Float;
+        setupFitFields(RuuviConfig.loadDevices());
+        trace("view created, " + mFitFields.size() + " FIT fields");
     }
 
-    //! Called once per second by the activity. Drives the scanner and
-    //! prepares the header / value for the sensor on screen.
+    //! The field is shown (also when the settings menu above it closes).
+    function onShow() as Void {
+        trace("view onShow");
+    }
+
+    //! The field is hidden (also when the settings menu opens above it).
+    function onHide() as Void {
+        trace("view onHide");
+    }
+
+    //! Called once per second by the activity. Drives the scanner, logs the
+    //! temperatures and prepares a cell for each visible sensor.
     //! @param info Activity info (unused; data comes from BLE)
     function compute(info as Activity.Info) as Void {
         // BLE starts a few seconds after the field does (see RuuviSensorApp).
         var app = getApp();
         var scanner = app.ensureScanner();
         if (scanner == null) {
-            setText(app.hasBle() ? "STARTING" : "NO BLE");
+            mCells = [statusCell(APP_LABEL, app.hasBle() ? "STARTING" : "NO BLE")] as Array<Array>;
             return;
         }
 
         try {
             scanner.tick();
+            var now = System.getTimer();
+            logTemperatures(scanner, now);
 
             var devices = scanner.getDevices();
-            var idx = RuuviConfig.displayedIndex(devices, scanner.getActive());
-            if (idx < 0) {
+            if (devices.size() == 0) {
                 // Still scanning, so the settings menu can offer nearby tags.
-                mLabel = APP_LABEL;
-                setText("NO SENSORS " + scanner.getStatus());
+                mCells = [statusCell(APP_LABEL, "NO SENSORS " + scanner.getStatus())] as Array<Array>;
+                return;
+            }
+            var shown = RuuviConfig.visibleIndices(devices);
+            if (shown.size() == 0) {
+                mCells = [statusCell(APP_LABEL, "NONE SHOWN")] as Array<Array>;
                 return;
             }
 
-            // The sensor chosen under Display (else the first in the list).
-            var now = System.getTimer();
-            var dev = devices[idx];
-            var mac = dev[RuuviConfig.F_MAC] as String;
-            mLabel = dev[RuuviConfig.F_NAME] as String;
-            formatReading(scanner.getReading(mac), dev[RuuviConfig.F_SHOW] as Number, scanner, now);
+            var cells = [] as Array<Array>;
+            for (var i = 0; i < shown.size(); i++) {
+                var dev = devices[shown[i]];
+                var mac = dev[RuuviConfig.F_MAC] as String;
+                var cell = formatReading(scanner.getReading(mac), dev[RuuviConfig.F_SHOW] as Number,
+                    scanner, now);
+                cell[C_LABEL] = dev[RuuviConfig.F_NAME] as String;
+                cells.add(cell);
+            }
+            mCells = cells;
         } catch (e) {
             // Never let a display problem crash the data field.
             System.println("RuuviSensor: compute error: " + e.getErrorMessage());
-            setText("---");
+            mCells = [statusCell(APP_LABEL, "---")] as Array<Array>;
         }
     }
 
-    //! Draws the header at the top and the value in the largest font that
-    //! fits the remaining space, in the device's data field colours.
+    //! Draws the cells in the grid that fits them best, in the device's data
+    //! field colours.
     //! @param dc Device context
     function onUpdate(dc as Graphics.Dc) as Void {
+        try {
+            draw(dc);
+        } catch (e) {
+            // An uncaught error here ends the data field (it then shows the
+            // app icon); log it and leave this frame blank instead.
+            System.println("RuuviSensor: draw error: " + e.getErrorMessage());
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // FIT logging
+    // ---------------------------------------------------------------------
+
+    //! Creates one FIT temperature field (°C, record level) per listed
+    //! sensor, displayed or not, once when the field starts: fields are only
+    //! created here, as in Garmin's samples, never during the activity. The
+    //! field id is the sensor's list position, matching the fitField entries
+    //! in resources/fit/fit.xml, and the field name is the sensor's name.
+    //! Which fields get values is decided by logTemperatures().
+    //! @param devices Sensor list
+    private function setupFitFields(devices as Array<Array>) as Void {
+        for (var i = 0; i < devices.size() && i < RuuviConfig.MAX_DEVICES; i++) {
+            try {
+                var field = createField(fitFieldName(devices[i][RuuviConfig.F_NAME] as String, i), i,
+                    FitContributor.DATA_TYPE_FLOAT,
+                    { :mesgType => FitContributor.MESG_TYPE_RECORD, :units => "°C" });
+                field.setData(mFitInvalid);
+                mFitFields.add(field);
+                mFitMacs.add(devices[i][RuuviConfig.F_MAC] as String);
+            } catch (e) {
+                System.println("RuuviSensor: cannot create FIT field " + i + ": " + e.getErrorMessage());
+            }
+        }
+    }
+
+    //! @param name  Sensor name
+    //! @param index List position
+    //! @return FIT field name: the sensor's name, at most 16 characters
+    //!         ("sensor 1" etc. if the name is empty)
+    private function fitFieldName(name as String, index as Number) as String {
+        if (name.length() == 0) {
+            return "sensor " + (index + 1);
+        }
+        return (name.length() > 16) ? name.substring(0, 16) : name;
+    }
+
+    //! Logs the displayed sensors: each FIT field gets its sensor's latest
+    //! temperature (°C), or FIT's invalid value (a gap) while the sensor is
+    //! switched off under Display, removed, or not heard for LOST_DATA_MS.
+    //! Switching a sensor on or off takes effect at once; a sensor added to
+    //! the list during the activity has no field until the field restarts.
+    //! @param scanner Scanner
+    //! @param now     System.getTimer()
+    private function logTemperatures(scanner as RuuviScanner, now as Number) as Void {
+        var devices = scanner.getDevices();
+        for (var i = 0; i < mFitFields.size(); i++) {
+            var idx = RuuviConfig.findDevice(devices, mFitMacs[i]);
+            var reading = (idx >= 0 && devices[idx][RuuviConfig.F_VISIBLE] == true)
+                ? scanner.getReading(mFitMacs[i]) : null;
+            if (reading != null && (now - (reading[3] as Number)) <= LOST_DATA_MS) {
+                mFitFields[i].setData(reading[0] as Float);
+            } else {
+                mFitFields[i].setData(mFitInvalid);
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // Drawing
+    // ---------------------------------------------------------------------
+
+    //! Does the drawing for onUpdate(): picks the grid, then draws each cell
+    //! and the lines between them.
+    //! @param dc Device context
+    private function draw(dc as Graphics.Dc) as Void {
         var bg = getBackgroundColor();
         var fg = (bg == Graphics.COLOR_BLACK) ? Graphics.COLOR_WHITE : Graphics.COLOR_BLACK;
         dc.setColor(fg, bg);
@@ -109,76 +227,201 @@ class RuuviSensorView extends WatchUi.DataField {
 
         var w = dc.getWidth();
         var h = dc.getHeight();
+        var cells = mCells;
+        var n = cells.size();
+        var cols = bestColumns(dc, cells, w, h);
+        var rows = (n + cols - 1) / cols;
 
-        // ---- Header ----
-        // System fonts, as used by the device's own data field labels.
-        var labelFont = (h >= 120) ? Graphics.FONT_SYSTEM_MEDIUM
+        for (var i = 0; i < n; i++) {
+            var col = i % cols;
+            var row = i / cols;
+            // Integer edges so neighbouring cells share their border pixels.
+            var x0 = col * w / cols;
+            var x1 = (col + 1) * w / cols;
+            var y0 = row * h / rows;
+            var y1 = (row + 1) * h / rows;
+            drawCell(dc, cells[i], x0, y0, x1 - x0, y1 - y0);
+        }
+
+        // Lines between the cells.
+        dc.setColor(fg, Graphics.COLOR_TRANSPARENT);
+        for (var c = 1; c < cols; c++) {
+            var x = c * w / cols;
+            dc.drawLine(x, 0, x, h);
+        }
+        for (var r = 1; r < rows; r++) {
+            var y = r * h / rows;
+            dc.drawLine(0, y, w, y);
+        }
+    }
+
+    //! Picks the grid (number of columns) for the cells. Each grid is scored
+    //! by the value font height in its worst cell; among grids scoring at
+    //! least 80% of the best, the one with the fewest empty cells wins, then
+    //! the one with more columns (side by side).
+    //! @param dc    Device context
+    //! @param cells Cells to lay out
+    //! @param w     Field width
+    //! @param h     Field height
+    //! @return Number of columns (1..cells.size())
+    private function bestColumns(dc as Graphics.Dc, cells as Array<Array>, w as Number,
+            h as Number) as Number {
+        var n = cells.size();
+        var scores = new [n + 1] as Array<Number>;
+        var top = -1000000;
+        for (var cols = 1; cols <= n; cols++) {
+            var rows = (n + cols - 1) / cols;
+            var score = gridScore(dc, cells, w / cols, h / rows);
+            scores[cols] = score;
+            if (score > top) {
+                top = score;
+            }
+        }
+        var best = 1;
+        var bestEmpty = n;
+        if (top <= 0) {
+            // Nothing fits anywhere: take the least bad grid.
+            for (var cols = 1; cols <= n; cols++) {
+                if (scores[cols] == top) {
+                    return cols;
+                }
+            }
+        }
+        for (var cols = 1; cols <= n; cols++) {
+            var empty = ((n + cols - 1) / cols) * cols - n;
+            if ((scores[cols] as Number) * 5 >= top * 4 && empty <= bestEmpty) {
+                best = cols;
+                bestEmpty = empty;
+            }
+        }
+        return best;
+    }
+
+    //! @param dc    Device context
+    //! @param cells Cells to lay out
+    //! @param cw    Cell width
+    //! @param ch    Cell height
+    //! @return Value font height in the worst cell; a value that does not
+    //!         fit even in the smallest font scores below every grid where
+    //!         it fits
+    private function gridScore(dc as Graphics.Dc, cells as Array<Array>, cw as Number,
+            ch as Number) as Number {
+        var score = 1000000;
+        for (var i = 0; i < cells.size(); i++) {
+            var fit = fitValue(dc, cells[i], cw, ch);
+            var fontH = dc.getFontHeight(fit[0] as Graphics.FontType);
+            if (!(fit[1] as Boolean)) {
+                fontH -= 1000;
+            }
+            if (fontH < score) {
+                score = fontH;
+            }
+        }
+        return score;
+    }
+
+    //! @param h Cell height
+    //! @return Header font for a cell of this height (system fonts, as the
+    //!         device's own data field labels use)
+    private function labelFont(h as Number) as Graphics.FontType {
+        return (h >= 120) ? Graphics.FONT_SYSTEM_MEDIUM
             : ((h >= 70) ? Graphics.FONT_SYSTEM_SMALL : Graphics.FONT_SYSTEM_TINY);
-        var labelH = dc.getFontHeight(labelFont);
-        dc.drawText(w / 2, 1, labelFont, mLabel, Graphics.TEXT_JUSTIFY_CENTER);
+    }
 
-        // ---- Value ----
-        var top = labelH + 1;
-        var avail = h - top;
-        var maxW = w - 6;
-        var unitFont = (h >= 120) ? Graphics.FONT_LARGE
+    //! @param h Cell height
+    //! @return Unit font for a cell of this height
+    private function unitFont(h as Number) as Graphics.FontType {
+        return (h >= 120) ? Graphics.FONT_LARGE
             : ((h >= 70) ? Graphics.FONT_MEDIUM : Graphics.FONT_SMALL);
-        var unitW = (mUnit.length() > 0) ? dc.getTextWidthInPixels(" " + mUnit, unitFont) : 0;
+    }
 
-        var fonts = mNumeric ? NUMBER_FONTS : TEXT_FONTS;
-        var font = fonts[fonts.size() - 1];
+    //! Finds the largest value font that fits a cell below its header.
+    //! @param dc   Device context
+    //! @param cell Cell [label, value, unit, numeric]
+    //! @param w    Cell width
+    //! @param h    Cell height
+    //! @return [font, fits]: fits is false if even the smallest font is too
+    //!         big (the smallest font is returned then)
+    private function fitValue(dc as Graphics.Dc, cell as Array, w as Number, h as Number) as Array {
+        var avail = h - dc.getFontHeight(labelFont(h)) - 1;
+        var maxW = w - 6;
+        var value = cell[C_VALUE] as String;
+        var unit = cell[C_UNIT] as String;
+        var unitW = (unit.length() > 0) ? dc.getTextWidthInPixels(" " + unit, unitFont(h)) : 0;
+
+        var fonts = (cell[C_NUMERIC] as Boolean) ? NUMBER_FONTS : TEXT_FONTS;
         for (var i = 0; i < fonts.size(); i++) {
             var f = fonts[i];
             // Fit the full line height so the number is not oversized.
-            if (dc.getFontHeight(f) <= avail && dc.getTextWidthInPixels(mValue, f) + unitW <= maxW) {
-                font = f;
-                break;
+            if (dc.getFontHeight(f) <= avail && dc.getTextWidthInPixels(value, f) + unitW <= maxW) {
+                return [f, true];
             }
         }
+        return [fonts[fonts.size() - 1], false];
+    }
 
-        var valueW = dc.getTextWidthInPixels(mValue, font);
-        var x = (w - valueW - unitW) / 2;
-        var cy = top + avail / 2;
-        dc.drawText(x, cy, font, mValue, Graphics.TEXT_JUSTIFY_LEFT | Graphics.TEXT_JUSTIFY_VCENTER);
+    //! Draws one cell: the header at the top and the value in the largest
+    //! font that fits the space below it.
+    //! @param dc   Device context
+    //! @param cell Cell [label, value, unit, numeric]
+    //! @param x0   Left edge
+    //! @param y0   Top edge
+    //! @param w    Width
+    //! @param h    Height
+    private function drawCell(dc as Graphics.Dc, cell as Array, x0 as Number, y0 as Number,
+            w as Number, h as Number) as Void {
+        dc.setClip(x0, y0, w, h);
+
+        // ---- Header ----
+        var lFont = labelFont(h);
+        var labelH = dc.getFontHeight(lFont);
+        dc.drawText(x0 + w / 2, y0 + 1, lFont, cell[C_LABEL] as String, Graphics.TEXT_JUSTIFY_CENTER);
+
+        // ---- Value ----
+        var value = cell[C_VALUE] as String;
+        var unit = cell[C_UNIT] as String;
+        var uFont = unitFont(h);
+        var unitW = (unit.length() > 0) ? dc.getTextWidthInPixels(" " + unit, uFont) : 0;
+        var font = fitValue(dc, cell, w, h)[0] as Graphics.FontType;
+        var valueW = dc.getTextWidthInPixels(value, font);
+        var x = x0 + (w - valueW - unitW) / 2;
+        var top = y0 + labelH + 1;
+        var cy = top + (y0 + h - top) / 2;
+        dc.drawText(x, cy, font, value, Graphics.TEXT_JUSTIFY_LEFT | Graphics.TEXT_JUSTIFY_VCENTER);
         if (unitW > 0) {
             // Unit vertically centred on the number, directly beside it.
-            dc.drawText(x + valueW, cy, unitFont, " " + mUnit,
+            dc.drawText(x + valueW, cy, uFont, " " + unit,
                 Graphics.TEXT_JUSTIFY_LEFT | Graphics.TEXT_JUSTIFY_VCENTER);
         }
+
+        dc.clearClip();
     }
 
-    //! Sets a text (non-numeric) value with no unit.
-    //! @param text Value text
-    private function setText(text as String) as Void {
-        mValue = text;
-        mUnit = "";
-        mNumeric = false;
+    // ---------------------------------------------------------------------
+    // Cell contents
+    // ---------------------------------------------------------------------
+
+    //! @param label Header
+    //! @param text  Value text
+    //! @return Text (non-numeric) cell with no unit
+    private function statusCell(label as String, text as String) as Array {
+        return [label, text, "", false];
     }
 
-    //! Sets a numeric value drawn in a number font, with a unit beside it.
-    //! @param value Number text (digits, '.', '-')
-    //! @param unit  Unit text
-    private function setNumber(value as String, unit as String) as Void {
-        mValue = value;
-        mUnit = unit;
-        mNumeric = true;
-    }
-
-    //! Prepares the value for one sensor (its name is in the header).
+    //! Prepares the value for one sensor (the caller sets its name).
     //! @param reading [tempC, humidity, hPa, timerMs] or null if not heard yet
     //! @param show    RuuviConfig.SHOW_* value
     //! @param scanner Scanner (for the status text)
     //! @param now     System.getTimer()
+    //! @return Cell [label, value, unit, numeric] with an empty label
     private function formatReading(reading as Array?, show as Number, scanner as RuuviScanner,
-            now as Number) as Void {
+            now as Number) as Array {
         if (reading == null) {
-            setText("SCAN " + scanner.getStatus());
-            return;
+            return statusCell("", "SCAN " + scanner.getStatus());
         }
         var age = now - (reading[3] as Number);
         if (age > LOST_DATA_MS) {
-            setText("---");
-            return;
+            return statusCell("", "---");
         }
 
         var t = reading[0] as Float;
@@ -205,13 +448,12 @@ class RuuviSensorView extends WatchUi.DataField {
         }
 
         if (show == RuuviConfig.SHOW_HUMIDITY) {
-            setNumber(h.format("%.0f"), "%RH" + mark);
+            return ["", h.format("%.0f"), "%RH" + mark, true];
         } else if (show == RuuviConfig.SHOW_PRESSURE) {
-            setNumber(presText, presSuffix + mark);
+            return ["", presText, presSuffix + mark, true];
         } else if (show == RuuviConfig.SHOW_ALL) {
-            setText("T:" + tempText + " H:" + h.format("%.0f") + " P:" + presText + mark);
-        } else {
-            setNumber(tempText, tempUnit + mark);
+            return statusCell("", "T:" + tempText + " H:" + h.format("%.0f") + " P:" + presText + mark);
         }
+        return ["", tempText, tempUnit + mark, true];
     }
 }

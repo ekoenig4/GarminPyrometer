@@ -3,14 +3,14 @@
 //
 // Shared configuration for RuuviSensor:
 //   * The sensor list, kept in Application.Storage under DEVICES_KEY as an
-//     array of rows [mac, name, show]:
-//       mac  - 12 upper-case hex digits of the tag's MAC address (the lock)
-//       name - display name, shown as the data field's header
-//       show - which quantity the field displays (SHOW_*)
-//     Storage (not Properties) is used because the list has a variable
-//     length; it is edited from the on-device settings menu.
-//   * The displayed sensor (ACTIVE_KEY): the MAC of the sensor the field
-//     shows. If unset or no longer listed, the first sensor is shown.
+//     array of rows [mac, name, show, visible]:
+//       mac     - 12 upper-case hex digits of the tag's MAC address (the lock)
+//       name    - display name, shown as the sensor's header in the field
+//       show    - which quantity the field displays (SHOW_*)
+//       visible - true if the field shows this sensor (chosen under Display)
+//     Rows saved by older versions have no visible flag; they load as
+//     visible. Storage (not Properties) is used because the list has a
+//     variable length; it is edited from the on-device settings menu.
 //   * The nearby-tag list the running data field saves for the settings
 //     menu (NEARBY_KEY, rows [mac, label, rssi, epochSeconds]).
 //   * Display units, kept in Properties (TempUnit / PressureUnit) so they can
@@ -28,9 +28,7 @@ module RuuviConfig {
     const F_MAC = 0;
     const F_NAME = 1;
     const F_SHOW = 2;
-
-    // ---- Displayed sensor ("" = not chosen: first in the list) ----
-    const ACTIVE_KEY = "active";
+    const F_VISIBLE = 3;
 
     // ---- Nearby tags saved by the data field ----
     const NEARBY_KEY = "nearbyTags";   // new key: older builds used "nearby" with another layout
@@ -60,7 +58,7 @@ module RuuviConfig {
     // ---------------------------------------------------------------------
 
     //! Loads the sensor list, dropping malformed rows.
-    //! @return Array of [mac, name, show] rows (possibly empty)
+    //! @return Array of [mac, name, show, visible] rows (possibly empty)
     function loadDevices() as Array<Array> {
         var out = [] as Array<Array>;
         var raw = null;
@@ -77,7 +75,9 @@ module RuuviConfig {
                     var r = row as Array;
                     if (r.size() >= 3 && r[F_MAC] instanceof String && r[F_NAME] instanceof String
                             && r[F_SHOW] instanceof Number) {
-                        out.add([r[F_MAC], r[F_NAME], r[F_SHOW]]);
+                        var visible = (r.size() > F_VISIBLE && r[F_VISIBLE] instanceof Boolean)
+                            ? r[F_VISIBLE] : true;
+                        out.add([r[F_MAC], r[F_NAME], r[F_SHOW], visible]);
                     }
                 }
             }
@@ -86,7 +86,7 @@ module RuuviConfig {
     }
 
     //! Saves the sensor list.
-    //! @param devices Array of [mac, name, show] rows
+    //! @param devices Array of [mac, name, show, visible] rows
     function saveDevices(devices as Array<Array>) as Void {
         try {
             Application.Storage.setValue(DEVICES_KEY, devices);
@@ -108,6 +108,7 @@ module RuuviConfig {
     }
 
     //! Adds a sensor locked to mac (no-op if present or the list is full).
+    //! New sensors show temperature and are visible.
     //! @param mac  12 hex digits
     //! @param name Display name
     //! @return true if added
@@ -116,7 +117,7 @@ module RuuviConfig {
         if (devices.size() >= MAX_DEVICES || findDevice(devices, mac) >= 0) {
             return false;
         }
-        devices.add([mac, name, SHOW_TEMPERATURE]);
+        devices.add([mac, name, SHOW_TEMPERATURE, true]);
         saveDevices(devices);
         return true;
     }
@@ -132,37 +133,12 @@ module RuuviConfig {
             }
         }
         saveDevices(kept);
-        // The displayed sensor is gone: fall back to the first one.
-        if (mac.equals(getActive())) {
-            setActive("");
-        }
     }
 
-    //! @return MAC chosen under Display, or "" if none was chosen
-    function getActive() as String {
-        try {
-            var value = Application.Storage.getValue(ACTIVE_KEY);
-            if (value instanceof String) {
-                return value as String;
-            }
-        } catch (e) {
-            System.println("RuuviSensor: cannot read displayed sensor: " + e.getErrorMessage());
-        }
-        return "";
-    }
-
-    //! @param mac MAC of the sensor to show, or "" to clear the choice
-    function setActive(mac as String) as Void {
-        try {
-            Application.Storage.setValue(ACTIVE_KEY, mac);
-        } catch (e) {
-            System.println("RuuviSensor: cannot save displayed sensor: " + e.getErrorMessage());
-        }
-    }
-
-    //! Changes one field (F_NAME or F_SHOW) of the sensor locked to mac.
+    //! Changes one field (F_NAME, F_SHOW or F_VISIBLE) of the sensor locked
+    //! to mac.
     //! @param mac   12 hex digits
-    //! @param field F_NAME or F_SHOW
+    //! @param field F_NAME, F_SHOW or F_VISIBLE
     //! @param value New value
     function updateDevice(mac as String, field as Number, value) as Void {
         var devices = loadDevices();
@@ -174,15 +150,15 @@ module RuuviConfig {
     }
 
     //! @param devices Sensor list
-    //! @param active  MAC chosen under Display ("" if none)
-    //! @return Index of the sensor the field shows: the chosen one if it is
-    //!         listed, else the first; -1 if the list is empty
-    function displayedIndex(devices as Array<Array>, active as String) as Number {
-        if (devices.size() == 0) {
-            return -1;
+    //! @return Indices of the sensors the field shows, in list order
+    function visibleIndices(devices as Array<Array>) as Array<Number> {
+        var out = [] as Array<Number>;
+        for (var i = 0; i < devices.size(); i++) {
+            if (devices[i][F_VISIBLE] == true) {
+                out.add(i);
+            }
         }
-        var idx = findDevice(devices, active);
-        return (idx >= 0) ? idx : 0;
+        return out;
     }
 
     //! @param mac 12 hex digits

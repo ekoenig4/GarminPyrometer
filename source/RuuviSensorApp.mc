@@ -28,6 +28,13 @@ class RuuviSensorApp extends Application.AppBase {
     // System.getTimer() when getInitialView() ran (0 = not in data field mode).
     private var mViewStartMs as Number = 0;
 
+    // true once getSettingsView() ran: this instance hosts the settings menu.
+    private var mSettingsMode as Boolean = false;
+
+    // System.getTimer() when this instance was created; identifies the
+    // instance in the lifecycle log.
+    private var mCreatedMs as Number;
+
     // Display units, cached from the settings (see loadUnits()).
     private var mFahrenheit as Boolean = false;
     private var mPressureUnit as Number = 0;   // RuuviConfig.PRESSURE_*
@@ -35,17 +42,26 @@ class RuuviSensorApp extends Application.AppBase {
     //! Constructor.
     function initialize() {
         AppBase.initialize();
+        mCreatedMs = System.getTimer();
+        trace("new app instance " + mCreatedMs);
     }
 
     //! Called when the app starts (data field or settings menu).
     //! @param state Startup arguments (unused)
     function onStart(state as Dictionary?) as Void {
+        trace("onStart, instance " + mCreatedMs);
     }
 
-    //! Called when the data field is removed or the activity ends.
+    //! Called when the data field is removed or the activity ends, and when
+    //! the settings menu closes. Stops BLE and forgets the scanner and start
+    //! time, so a later getInitialView() on this same instance starts BLE
+    //! afresh instead of keeping a scanner that has been shut down for good.
     //! @param state Shutdown arguments (unused)
     function onStop(state as Dictionary?) as Void {
+        trace("onStop, instance " + mCreatedMs + ", settings mode " + mSettingsMode);
         var scanner = mScanner;
+        mScanner = null;
+        mViewStartMs = 0;
         if (scanner != null) {
             scanner.shutdown();
         }
@@ -54,6 +70,7 @@ class RuuviSensorApp extends Application.AppBase {
     //! Returns the data field view.
     //! @return Array containing the RuuviSensorView
     function getInitialView() {
+        trace("getInitialView, instance " + mCreatedMs);
         mViewStartMs = System.getTimer();
         loadUnits();
         return [new RuuviSensorView()];
@@ -63,11 +80,14 @@ class RuuviSensorApp extends Application.AppBase {
     //! device it is reached from the Connect IQ data field menu.
     //! @return [Menu2, Menu2InputDelegate]
     function getSettingsView() {
+        trace("getSettingsView, instance " + mCreatedMs);
+        mSettingsMode = true;
         return [new RuuviMainMenu(), new RuuviMainMenuDelegate()];
     }
 
     //! Called when settings are changed from Garmin Connect (store installs).
     function onSettingsChanged() as Void {
+        trace("onSettingsChanged, instance " + mCreatedMs);
         applySettings();
     }
 
@@ -129,6 +149,14 @@ class RuuviSensorApp extends Application.AppBase {
         mFahrenheit = RuuviConfig.useFahrenheit();
         mPressureUnit = RuuviConfig.getNumber(RuuviConfig.PRESSURE_UNIT_KEY, RuuviConfig.PRESSURE_HPA);
     }
+}
+
+//! Writes a lifecycle line to the log (GARMIN/APPS/LOGS/RUUVISENSOR.TXT on
+//! the device, the console in the simulator), stamped with System.getTimer()
+//! so the order of events across app instances can be followed.
+//! @param msg Message
+function trace(msg as String) as Void {
+    System.println("RuuviSensor " + System.getTimer() + ": " + msg);
 }
 
 //! Returns the running application instance.
